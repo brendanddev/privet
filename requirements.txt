@@ -100,6 +100,7 @@ packaging==26.0
 pandas==2.3.3
 pillow==12.1.1
 platformdirs==4.9.2
+plotly==6.5.2
 pluggy==1.6.0
 posthog==5.4.0
 propcache==0.4.1

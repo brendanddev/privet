@@ -1,20 +1,28 @@
 
 import os
 import streamlit as st
-from rag_engine import RAGEngine
-from logger import setup_logger
 import chromadb
+from rag_engine import RAGEngine
+from dashboard import render_sidebar
+from logger import setup_logger
 
 logger = setup_logger()
 
+
 @st.cache_resource
 def load_engine():
-    """Load and cache the RAG engine so documents aren't re-indexed on every rerender."""
+    """Load and cache the RAG engine so documents are not re-indexed on every rerender."""
     logger.info("Loading RAG engine via Streamlit cache")
     return RAGEngine()
 
+
 def get_collection_stats():
-    """Fetch chunk and document count directly from ChromaDB."""
+    """
+    Fetch chunk count and unique document names directly from ChromaDB.
+
+    Returns:
+        tuple: (total_chunks int, unique_files set)
+    """
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_or_create_collection("documents")
     results = collection.get(include=["metadatas"])
@@ -22,66 +30,14 @@ def get_collection_stats():
     unique_files = set(m.get("file_name", "unknown") for m in results["metadatas"])
     return total_chunks, unique_files
 
+
 engine = load_engine()
 logger.info("Streamlit app started")
 
-# Sidebar
-with st.sidebar:
-    st.title("Debug Panel")
-    st.divider()
+# Render sidebar debug panel
+render_sidebar(engine, get_collection_stats)
 
-    st.subheader("Engine Stats")
-    stats = engine.get_stats()
-    st.metric("Startup Time", f"{stats['startup_time']}s")
-    st.metric("Last Query Time", f"{stats['last_query_time']}s" if stats['last_query_time'] else "No queries yet")
-    st.caption(f"**LLM:** {stats['llm_model']}")
-    st.caption(f"**Embed:** {stats['embed_model']}")
-
-    st.divider()
-
-    st.subheader("Collection Stats")
-    total_chunks, unique_files = get_collection_stats()
-    st.metric("Total Chunks", total_chunks)
-    st.metric("Documents Loaded", len(unique_files))
-
-    if unique_files:
-        with st.expander("Manage documents"):
-            for f in unique_files:
-                col1, col2 = st.columns([3, 1])
-                exists_on_disk = os.path.exists(os.path.join("docs", f))
-                with col1:
-                    if exists_on_disk:
-                        st.caption(f"{f}")
-                    else:
-                        st.caption(f"{f} _(not in docs folder)_")
-                with col2:
-                    if st.button("Remove", key=f"remove_{f}"):
-                        success = engine.remove_document(f)
-                        if success:
-                            file_path = os.path.join("docs", f)
-                            if os.path.exists(file_path):
-                                os.remove(file_path)
-                            st.success(f"Removed {f}")
-                            logger.info(f"Document removed via UI: {f}")
-                            st.rerun()
-                        else:
-                            st.error(f"Could not remove {f}")
-
-    st.divider()
-
-    st.subheader("Last Query Sources")
-    if "last_sources" not in st.session_state:
-        st.caption("No queries yet.")
-    else:
-        for i, source in enumerate(st.session_state.last_sources):
-            st.caption(f"**[{i+1}] {source['file']} — Page {source['page']}**")
-            if source["score"]:
-                st.progress(min(float(source["score"]), 1.0), text=f"Score: {source['score']}")
-            st.caption(f"_{source['preview']}_")
-            st.divider()
-
-
-# Main section
+# Main UI
 st.title("Local Document Assistant")
 st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
 
@@ -106,7 +62,6 @@ with st.expander("Upload a document"):
     )
 
     if uploaded_file is not None:
-        # Save the uploaded file to the docs folder
         save_path = os.path.join("docs", uploaded_file.name)
 
         if os.path.exists(save_path):
@@ -121,6 +76,8 @@ with st.expander("Upload a document"):
             st.success(f"{uploaded_file.name} added — {new_chunks} new chunks indexed")
             logger.info(f"File uploaded via UI: {uploaded_file.name} | Chunks added: {new_chunks}")
 
+st.divider()
+
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -130,6 +87,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Handle new user input
 if prompt := st.chat_input("Ask a question about your documents..."):
     logger.info(f"User submitted prompt via UI: '{prompt}'")
 
