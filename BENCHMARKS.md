@@ -44,4 +44,31 @@ Added index persistence. ChromaDB is checked on startup and re-indexing is skipp
 
 **What changed:** `_build_query_engine` now checks `chroma_collection.count()` before indexing. If chunks exist, it loads directly from the vector store using `VectorStoreIndex.from_vector_store()` instead of re-processing documents.
 
+## v0.3 — Chunk Size Tuning
+
+Reduced chunk size from default to 256 tokens with 25 token overlap using `SentenceSplitter`.
+
+| Metric | Before (v0.3 baseline) | After |
+|---|---|---|
+| Avg chunk size | 1342 chars | 722 chars |
+| Min chunk size | 474 chars | 101 chars |
+| Max chunk size | 3893 chars | 1186 chars |
+| Total chunks | 55 | 113 |
+| Oversized chunks | 78% | 17% |
+| ChromaDB index size | 1.2 MB | 3.4 MB |
+| Query response time | ~2-7s | ~1.5-3.3s |
+| Documents indexed | 6 | 9 |
+
+**What changed:** Added `SentenceSplitter(chunk_size=256, chunk_overlap=25)` to the indexing pipeline. Smaller chunks give the model more focused context per retrieval, improving answer precision and reducing query time.
+
+**Tradeoff:** Index size grew from 1.2MB to 3.4MB because more chunks means more embeddings stored. This is expected and acceptable — more chunks at smaller sizes is better for retrieval quality.
+
+**Chunk distribution after tuning:**
+| Range | Count |
+|---|---|
+| 0-200 chars | 1 |
+| 200-500 chars | 23 |
+| 500-1000 chars | 70 |
+| 1000+ chars | 19 |
+
 ---

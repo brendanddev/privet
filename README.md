@@ -17,7 +17,6 @@ Most AI document tools send your data to the cloud. This project is built around
 
 ---
 
-
 ## Features
 
 - **Fully local pipeline** — every component runs on your machine, no external API calls

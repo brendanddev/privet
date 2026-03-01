@@ -1,6 +1,7 @@
 
 import time
 import chromadb
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.ollama import Ollama
@@ -62,7 +63,7 @@ class RAGEngine:
 
     def _build_query_engine(self):
         """
-        Internal method to set up ChromaDB, ingest documents, and build the index.
+        Sets up ChromaDB, ingest documents, and build the index.
 
         Checks if documents have already been indexed and skips re-embedding if so.
         This dramatically reduces startup time on subsequent runs.
@@ -72,27 +73,36 @@ class RAGEngine:
         """
         self.logger.info(f"Building query engine | Docs path: {self.docs_path} | Collection: {self.collection_name}")
 
-        # Connect to ChromaDB and get or create the collection
         chroma_client = chromadb.PersistentClient(path=self.chroma_path)
         chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
-
-        # Wrap the ChromaDB collection as a LlamaIndex vector store
         vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-        # Check if the collection already has documents indexed
         existing_count = chroma_collection.count()
 
         if existing_count > 0:
-            # Index already exists — load it directly without re-embedding
             self.logger.info(f"Existing index found | {existing_count} chunks | Skipping re-indexing")
             index = VectorStoreIndex.from_vector_store(vector_store)
         else:
-            # No index found — load documents and embed them for the first time
             self.logger.info("No existing index found — indexing documents for the first time")
+
+            # SentenceSplitter controls how documents are chunked
+            # chunk_size: max tokens per chunk — smaller = more precise retrieval
+            # chunk_overlap: tokens shared between adjacent chunks — prevents
+            # losing context at chunk boundaries
+            splitter = SentenceSplitter(
+                chunk_size=256,
+                chunk_overlap=50
+            )
+
             docs = SimpleDirectoryReader(self.docs_path).load_data()
             self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
-            index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
+
+            index = VectorStoreIndex.from_documents(
+                docs,
+                storage_context=storage_context,
+                transformations=[splitter]
+            )
             self.logger.info("Vector index built and persisted to ChromaDB")
 
         return index.as_query_engine(similarity_top_k=3)
