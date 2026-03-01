@@ -1,0 +1,18 @@
+
+# Virtual envrionment
+venv/
+
+# Docs
+docs/
+
+# ChromaDB local database
+chroma_db/
+
+# Environment variables
+.env
+
+# Others
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
