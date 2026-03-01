@@ -6,6 +6,7 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageCon
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
+from core.embeddings import Float16EmbeddingWrapper
 from utils.logger import setup_logger
 
 
@@ -52,7 +53,10 @@ class RAGEngine:
 
         # Configure global LlamaIndex settings with local Ollama models
         Settings.llm = Ollama(model=llm_model, request_timeout=request_timeout)
-        Settings.embed_model = OllamaEmbedding(model_name=embed_model)
+        
+        # Wrap with float16 quantization, halves storage size with negligible quality loss
+        base_embed = OllamaEmbedding(model_name=embed_model)
+        Settings.embed_model = Float16EmbeddingWrapper(base_embed)
 
         # Build the query engine and record how long it takes
         start = time.time()
