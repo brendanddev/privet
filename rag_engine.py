@@ -200,3 +200,40 @@ class RAGEngine:
 
         self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {chunks_after}")
         return new_chunks
+
+    def remove_document(self, file_name: str) -> bool:
+        """
+        Remove all chunks belonging to a specific document from the vector store.
+
+        Args:
+            file_name (str): The filename to remove (ex: 'test.pdf')
+
+        Returns:
+            bool: True if removed successfully, False if not found
+        """
+        self.logger.info(f"Removing document: {file_name}")
+
+        client = chromadb.PersistentClient(path=self.chroma_path)
+        collection = client.get_or_create_collection(self.collection_name)
+
+        # Find all chunk IDs belonging to this file
+        results = collection.get(include=["metadatas"])
+        ids_to_delete = [
+            results["ids"][i]
+            for i, m in enumerate(results["metadatas"])
+            if m.get("file_name") == file_name
+        ]
+
+        if not ids_to_delete:
+            self.logger.warning(f"No chunks found for {file_name}")
+            return False
+
+        collection.delete(ids=ids_to_delete)
+        self.logger.info(f"Removed {len(ids_to_delete)} chunks for {file_name}")
+
+        # Refresh the query engine
+        vector_store = ChromaVectorStore(chroma_collection=collection)
+        index = VectorStoreIndex.from_vector_store(vector_store)
+        self.query_engine = index.as_query_engine(similarity_top_k=3)
+
+        return True

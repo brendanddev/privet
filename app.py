@@ -43,10 +43,29 @@ with st.sidebar:
     total_chunks, unique_files = get_collection_stats()
     st.metric("Total Chunks", total_chunks)
     st.metric("Documents Loaded", len(unique_files))
+
     if unique_files:
-        with st.expander("View documents"):
+        with st.expander("Manage documents"):
             for f in unique_files:
-                st.caption(f"{f}")
+                col1, col2 = st.columns([3, 1])
+                exists_on_disk = os.path.exists(os.path.join("docs", f))
+                with col1:
+                    if exists_on_disk:
+                        st.caption(f"{f}")
+                    else:
+                        st.caption(f"{f} _(not in docs folder)_")
+                with col2:
+                    if st.button("Remove", key=f"remove_{f}"):
+                        success = engine.remove_document(f)
+                        if success:
+                            file_path = os.path.join("docs", f)
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                            st.success(f"Removed {f}")
+                            logger.info(f"Document removed via UI: {f}")
+                            st.rerun()
+                        else:
+                            st.error(f"Could not remove {f}")
 
     st.divider()
 

@@ -21,7 +21,7 @@ Most AI document tools send your data to the cloud. This project is built around
 ## Features
 
 - **Fully local pipeline** — every component runs on your machine, no external API calls
-- **PDF document ingestion** — drop any PDF into the `docs/` folder and ask questions about it
+- **Multi-format document ingestion** — drop any PDF, TXT, DOCX, or CSV into the `docs/` folder or upload directly through the UI and ask questions about it
 - **Persistent index** — documents are only embedded once, startup is near-instant on subsequent runs
 - **Source citations** — every answer includes the source document and page number it was pulled from
 - **Relevance scoring** — see how confident the retrieval was for each source chunk
