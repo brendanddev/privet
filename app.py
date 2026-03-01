@@ -1,43 +1,37 @@
+
 import streamlit as st
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core import StorageContext
-from llama_index.llms.ollama import Ollama
-from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.core import Settings
-import chromadb
+from rag_engine import RAGEngine
 
-# llm and embedding models
-Settings.llm = Ollama(model="gemma3:1b", request_timeout=120.0)
-Settings.embed_model = OllamaEmbedding(model_name="nomic-embed-text")
 
-# chroma db
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
-chroma_collection = chroma_client.get_or_create_collection("documents")
-vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-storage_context = StorageContext.from_defaults(vector_store=vector_store)
+# initialize the rag engine. cached so it only loads once per session
+@st.cache_resource
+def load_engine():
+    """Load and cache the RAG engine so documents aren't re-indexed on every rerender."""
+    return RAGEngine()
 
-# load docxs
-docs = SimpleDirectoryReader("docs").load_data()
-index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
-query_engine = index.as_query_engine()
+engine = load_engine()
 
 st.title("Local Document Assistant")
-st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
+st.caption("Currently powered by Ollama + LlamaIndex + ChromaDB")
 
+# Initialize chat history in session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# render existing chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# handle new user input
 if prompt := st.chat_input("Ask a question about your documents..."):
+    # Add user message to history and display it
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Query the RAG engine and display the response
     with st.chat_message("assistant"):
-        response = query_engine.query(prompt)
-        st.markdown(str(response))
-        st.session_state.messages.append({"role": "assistant", "content": str(response)})
+        response = engine.query(prompt)
+        st.markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
