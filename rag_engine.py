@@ -64,6 +64,9 @@ class RAGEngine:
         """
         Internal method to set up ChromaDB, ingest documents, and build the index.
 
+        Checks if documents have already been indexed and skips re-embedding if so.
+        This dramatically reduces startup time on subsequent runs.
+
         Returns:
             query_engine: A LlamaIndex query engine ready to answer questions
         """
@@ -77,13 +80,20 @@ class RAGEngine:
         vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-        # Load all documents from the docs directory
-        docs = SimpleDirectoryReader(self.docs_path).load_data()
-        self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
+        # Check if the collection already has documents indexed
+        existing_count = chroma_collection.count()
 
-        # Build the vector index from the loaded documents
-        index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
-        self.logger.info("Vector index built successfully")
+        if existing_count > 0:
+            # Index already exists — load it directly without re-embedding
+            self.logger.info(f"Existing index found | {existing_count} chunks | Skipping re-indexing")
+            index = VectorStoreIndex.from_vector_store(vector_store)
+        else:
+            # No index found — load documents and embed them for the first time
+            self.logger.info("No existing index found — indexing documents for the first time")
+            docs = SimpleDirectoryReader(self.docs_path).load_data()
+            self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
+            index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
+            self.logger.info("Vector index built and persisted to ChromaDB")
 
         return index.as_query_engine(similarity_top_k=3)
 
