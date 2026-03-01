@@ -251,3 +251,29 @@ class RAGEngine:
         self.query_engine = index.as_query_engine(similarity_top_k=3)
 
         return True
+    
+    def switch_models(self, llm_model: str, embed_model: str):
+        """
+        Switch the LLM and embedding model without restarting the app.
+
+        Reinitializes LlamaIndex settings and rebuilds the query engine using the new models. 
+        The index itself is not affected.. only the models used for generation and embedding are changed.
+
+        Args:
+            llm_model (str): New Ollama LLM model name
+            embed_model (str): New Ollama embedding model name
+        """
+        self.logger.info(f"Switching models | LLM: {llm_model} | Embed: {embed_model}")
+
+        self.llm_model = llm_model
+        self.embed_model_name = embed_model
+
+        # Reinitialize LlamaIndex settings with new models
+        Settings.llm = Ollama(model=llm_model, request_timeout=120.0)
+        base_embed = OllamaEmbedding(model_name=embed_model)
+        Settings.embed_model = Float16EmbeddingWrapper(base_embed)
+
+        # Rebuild query engine with new models
+        self.query_engine = self._build_query_engine()
+
+        self.logger.info(f"Model switch complete | LLM: {llm_model} | Embed: {embed_model}")

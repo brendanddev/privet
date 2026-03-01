@@ -20,12 +20,15 @@ Most AI document tools send your data to the cloud. This project is built around
 ## Features
 
 - **Fully local pipeline** — every component runs on your machine, no external API calls
-- **Multi-format document ingestion** — drop any PDF, TXT, DOCX, or CSV into the `docs/` folder or upload directly through the UI and ask questions about it
+- **Multi-format document ingestion** — supports PDF, TXT, DOCX, and CSV via folder drop or direct UI upload
 - **Persistent index** — documents are only embedded once, startup is near-instant on subsequent runs
+- **Document management** — add and remove documents through the UI, index stays in sync
 - **Source citations** — every answer includes the source document and page number it was pulled from
 - **Relevance scoring** — see how confident the retrieval was for each source chunk
-- **Debug sidebar** — live panel showing engine stats, collection info, and last query sources
-- **Query + startup benchmarking** — response times logged and displayed in the UI
+- **Model switcher** — swap LLM and embedding models from the sidebar without restarting
+- **Float16 embedding quantization** — embeddings stored at half precision, 2x memory reduction with negligible quality loss
+- **Chunk size tuning** — documents split at 256 tokens for precise retrieval
+- **Debug sidebar** — live panel with engine stats, chunk distribution chart, index health indicators, and retrieval confidence meters
 - **Structured logging** — all engine activity written to daily log files in `logs/`
 - **RAG Debugger** — standalone inspection tool to analyze chunks, embeddings, similarity scores, and trace queries
 
@@ -55,7 +58,47 @@ ollama pull nomic-embed-text
 ```
 
 ### Add your documents
-Drop any PDF files into the `docs/` folder.
+
+Drop any supported file (PDF, TXT, DOCX, CSV) into the `docs/` folder, or upload directly through the UI.
+
+### Run
+```bash
+# Terminal 1 — start Ollama
+ollama serve
+
+# Terminal 2 — start the app
+streamlit run app.py
+```
+
+Then open your browser to `http://localhost:8501`
+
+### Run the debugger
+```bash
+python3 core/rag_debugger.py
+```
+
+---
+
+## Project Structure
+```
+local-rag-assistant/
+├── core/
+│   ├── rag_engine.py       # RAG pipeline logic
+│   ├── rag_debugger.py     # Inspection and debugging tools
+│   └── embeddings.py       # Float16 embedding quantization wrapper
+├── ui/
+│   └── dashboard.py        # Sidebar debug panel
+├── utils/
+│   └── logger.py           # Logging configuration
+├── app.py                  # Streamlit UI entry point
+├── docs/                   # Drop your documents here
+├── chroma_db/              # Vector store (auto-generated)
+├── logs/                   # Daily log files (auto-generated)
+├── BENCHMARKS.md           # Performance data and optimization history
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
 
 ---
 

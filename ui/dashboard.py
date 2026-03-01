@@ -199,6 +199,10 @@ def render_sidebar(engine, get_collection_stats):
 
         st.divider()
 
+        render_model_switcher(engine)
+
+        st.divider()
+
         # Collection Stats + Document Management
         st.subheader("Collection Stats")
         total_chunks, unique_files = get_collection_stats()
@@ -243,3 +247,59 @@ def render_sidebar(engine, get_collection_stats):
         # Retrieval Confidence
         sources = st.session_state.get("last_sources", [])
         render_retrieval_confidence(sources)
+
+def render_model_switcher(engine):
+    """
+    Render model selection dropdowns for LLM and embedding model.
+
+    Lists all models currently pulled in Ollama and allows switching both the LLM and embedding model 
+    without restarting the app.
+
+    Switching models reinitializes the engine settings but does not affect the existing ChromaDB index.
+
+    Args:
+        engine (RAGEngine): The active RAG engine instance
+    """
+    import ollama
+
+    st.subheader("Model Switcher")
+    st.caption("Switch models without restarting. Changes apply immediately.")
+
+    try:
+        # Get all models pulled in Ollama
+        models = ollama.list()
+        model_names = [m.model for m in models.models]
+
+        if not model_names:
+            st.warning("No models found. Pull a model with: ollama pull <model>")
+            return
+
+        # LLM selector
+        current_llm = engine.llm_model
+        selected_llm = st.selectbox(
+            "LLM Model",
+            options=model_names,
+            index=model_names.index(current_llm) if current_llm in model_names else 0,
+            help="Used to generate answers"
+        )
+
+        # Embedding model selector
+        current_embed = engine.embed_model_name
+        selected_embed = st.selectbox(
+            "Embedding Model",
+            options=model_names,
+            index=model_names.index(current_embed) if current_embed in model_names else 0,
+            help="Used to convert text to vectors for retrieval. Must match the model used to build the index."
+        )
+
+        # Only show apply button if something changed
+        if selected_llm != current_llm or selected_embed != current_embed:
+            st.warning("Changing the embedding model requires re-indexing your documents.")
+            if st.button("Apply"):
+                with st.spinner("Switching models..."):
+                    engine.switch_models(selected_llm, selected_embed)
+                st.success(f"Switched to {selected_llm} / {selected_embed}")
+                st.rerun()
+
+    except Exception as e:
+        st.error(f"Could not connect to Ollama: {e}")
