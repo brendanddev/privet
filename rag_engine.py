@@ -1,4 +1,5 @@
 
+import time
 import chromadb
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -40,13 +41,19 @@ class RAGEngine:
         self.collection_name = collection_name
         self.llm_model = llm_model
         self.embed_model_name = embed_model
+        self.startup_time = None
+        self.last_query_time = None
 
         # Configure global LlamaIndex settings with local Ollama models
         Settings.llm = Ollama(model=llm_model, request_timeout=request_timeout)
         Settings.embed_model = OllamaEmbedding(model_name=embed_model)
 
-        # Build the query engine on initialization
+        # Build the query engine and record how long it takes
+        start = time.time()
         self.query_engine = self._build_query_engine()
+        self.startup_time = round(time.time() - start, 2)
+
+        print(f"[RAGEngine] Ready in {self.startup_time}s")
 
     def _build_query_engine(self):
         """
@@ -69,17 +76,53 @@ class RAGEngine:
         # Build the vector index from the loaded documents
         index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
 
-        return index.as_query_engine()
+        return index.as_query_engine(similarity_top_k=3)
 
-    def query(self, question: str) -> str:
+    def query(self, question: str) -> dict:
         """
-        Run a question through the RAG pipeline and return the answer.
+        Run a question through the RAG pipeline and return the answer with sources.
 
         Args:
             question (str): The user's question
 
         Returns:
-            str: The generated answer based on the indexed documents
+            dict: Contains 'answer' (str), 'sources' (list of dicts), and 'query_time' (float)
         """
+        # Time the query so we can benchmark response speed
+        start = time.time()
         response = self.query_engine.query(question)
-        return str(response)
+        self.last_query_time = round(time.time() - start, 2)
+
+        print(f"[RAGEngine] Query completed in {self.last_query_time}s")
+
+        # Extract source information from the retrieved chunks
+        sources = []
+        for node in response.source_nodes:
+            sources.append({
+                "file": node.metadata.get("file_name", "Unknown"),
+                "page": node.metadata.get("page_label", "Unknown"),
+                "score": round(node.score, 4) if node.score else None,
+                "preview": node.text[:150]
+            })
+
+        return {
+            "answer": str(response),
+            "sources": sources,
+            "query_time": self.last_query_time
+        }
+
+    def get_stats(self) -> dict:
+        """
+        Return current engine performance stats.
+        
+        Useful for displaying benchmarks in the UI or logging baseline metrics.
+
+        Returns:
+            dict: Startup time, last query time, model names
+        """
+        return {
+            "startup_time": self.startup_time,
+            "last_query_time": self.last_query_time,
+            "llm_model": self.llm_model,
+            "embed_model": self.embed_model_name,
+        }

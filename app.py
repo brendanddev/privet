@@ -14,7 +14,7 @@ engine = load_engine()
 st.title("Local Document Assistant")
 st.caption("Currently powered by Ollama + LlamaIndex + ChromaDB")
 
-# Initialize chat history in session state
+# initialize chat histoy in session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -22,16 +22,24 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-
-# handle new user input
+        
 if prompt := st.chat_input("Ask a question about your documents..."):
-    # Add user message to history and display it
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Query the RAG engine and display the response
     with st.chat_message("assistant"):
-        response = engine.query(prompt)
-        st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        result = engine.query(prompt)
+        st.markdown(result["answer"])
+        st.caption(f"Response time: {result['query_time']}s")
+
+        if result["sources"]:
+            with st.expander("Sources"):
+                for i, source in enumerate(result["sources"]):
+                    st.markdown(f"**[{i+1}] {source['file']} — Page {source['page']}**")
+                    if source["score"]:
+                        st.caption(f"Relevance score: {source['score']}")
+                    st.caption(f"_{source['preview']}_")
+                    st.divider()
+
+        st.session_state.messages.append({"role": "assistant", "content": result["answer"]})
