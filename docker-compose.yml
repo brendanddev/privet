@@ -1,0 +1,64 @@
+
+services:
+
+  # Ollama (LLM server)
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+
+    volumes:
+      # Persists downloaded models between container restarts
+      - ollama_data:/root/.ollama
+    # GPU support, works on Linux with NVIDIA   (Mac = ollama uses metal automatically, windows = wsl2 with NVIDIA drivers)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Model puller (runs once)
+  ollama-setup:
+    image: ollama/ollama
+    container_name: ollama-setup
+    depends_on:
+      - ollama
+    volumes:
+      - ollama_data:/root/.ollama
+      
+    # wait for Ollama to be ready then pull required models
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5 &&
+        ollama pull gemma3:1b &&
+        ollama pull nomic-embed-text
+      "
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    restart: no
+
+  # Streamlit app
+  app:
+    build: .
+    container_name: local-rag-assistant
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist documents and ChromaDB index between restarts
+      - ./docs:/app/docs
+      - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
+    environment:
+      # Point the app to the Ollama container instead of localhost
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+      - ollama-setup
+
+volumes:
+  ollama_data:
