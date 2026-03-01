@@ -1,4 +1,5 @@
 
+import os
 import streamlit as st
 from rag_engine import RAGEngine
 from logger import setup_logger
@@ -76,6 +77,30 @@ with st.expander("How this works"):
     """)
 
 st.divider()
+
+# Document upload
+with st.expander("Upload a document"):
+    uploaded_file = st.file_uploader(
+        "Upload a PDF",
+        type=["pdf"],
+        help="Your file will be saved locally and added to the index"
+    )
+
+    if uploaded_file is not None:
+        # Save the uploaded file to the docs folder
+        save_path = os.path.join("docs", uploaded_file.name)
+
+        if os.path.exists(save_path):
+            st.warning(f"{uploaded_file.name} is already in your docs folder.")
+        else:
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            with st.spinner(f"Indexing {uploaded_file.name}..."):
+                new_chunks = engine.add_document(save_path)
+
+            st.success(f"✅ {uploaded_file.name} added — {new_chunks} new chunks indexed")
+            logger.info(f"File uploaded via UI: {uploaded_file.name} | Chunks added: {new_chunks}")
 
 # Initialize chat history
 if "messages" not in st.session_state:

@@ -160,3 +160,43 @@ class RAGEngine:
             "llm_model": self.llm_model,
             "embed_model": self.embed_model_name,
         }
+    
+    def add_document(self, file_path: str) -> int:
+        """
+        Ingest a single new document and add it to the existing index.
+
+        Does not re-index already embedded documents — only processes the new file.
+
+        Args:
+            file_path (str): Full path to the document to ingest
+
+        Returns:
+            int: Number of new chunks added to the index
+        """
+        self.logger.info(f"Adding new document: {file_path}")
+
+        # Load only the new document
+        docs = SimpleDirectoryReader(input_files=[file_path]).load_data()
+        self.logger.info(f"Loaded {len(docs)} pages from {file_path}")
+
+        # Connect to existing ChromaDB collection
+        chroma_client = chromadb.PersistentClient(path=self.chroma_path)
+        chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
+        chunks_before = chroma_collection.count()
+
+        # Add new document to the existing vector store
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        index = VectorStoreIndex.from_vector_store(vector_store)
+        
+        for doc in docs:
+            index.insert(doc)
+
+        chunks_after = chroma_collection.count()
+        new_chunks = chunks_after - chunks_before
+
+        # Refresh the query engine so it includes the new document
+        self.query_engine = index.as_query_engine(similarity_top_k=3)
+
+        self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {chunks_after}")
+        return new_chunks

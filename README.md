@@ -17,6 +17,21 @@ Most AI document tools send your data to the cloud. This project is built around
 
 ---
 
+
+## Features
+
+- **Fully local pipeline** — every component runs on your machine, no external API calls
+- **PDF document ingestion** — drop any PDF into the `docs/` folder and ask questions about it
+- **Persistent index** — documents are only embedded once, startup is near-instant on subsequent runs
+- **Source citations** — every answer includes the source document and page number it was pulled from
+- **Relevance scoring** — see how confident the retrieval was for each source chunk
+- **Debug sidebar** — live panel showing engine stats, collection info, and last query sources
+- **Query + startup benchmarking** — response times logged and displayed in the UI
+- **Structured logging** — all engine activity written to daily log files in `logs/`
+- **RAG Debugger** — standalone inspection tool to analyze chunks, embeddings, similarity scores, and trace queries
+
+---
+
 ## Models
 - **LLM:** `gemma3:1b` — lightweight local language model via Ollama
 - **Embeddings:** `nomic-embed-text` — local embedding model via Ollama
@@ -65,13 +80,13 @@ All benchmarks run on a MacBook Air M-series, 8GB RAM.
 | Embedding model | nomic-embed-text |
 
 ### How to Measure Yourself
-\```bash
+```bash
 # Index size on disk
 du -sh chroma_db/
 
 # RAM usage — run this while the app is running
 top -pid $(pgrep -f streamlit)
-\```
+```
 
 ---
 
