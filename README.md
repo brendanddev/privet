@@ -5,6 +5,18 @@ A fully local, private document assistant powered by Ollama, LlamaIndex, and Chr
 
 ---
 
+## Philosophy
+
+Most AI document tools send your data to the cloud. This project is built around three core principles:
+
+**Privacy first.** Every part of the pipeline runs on your machine. Your documents, your embeddings, your queries — none of it is transmitted to any external server. No OpenAI, no cloud APIs, no tracking.
+
+**Hardware optimized.** Built to run efficiently on consumer hardware with limited RAM. The goal is maximum performance from minimum resources — smaller indexes, quantized models, efficient retrieval.
+
+**Ease of use.** A local AI tool should be as simple to use as any cloud alternative. No technical setup beyond the initial install, no command line required to use it day to day.
+
+---
+
 ## Models
 - **LLM:** `gemma3:1b` — lightweight local language model via Ollama
 - **Embeddings:** `nomic-embed-text` — local embedding model via Ollama

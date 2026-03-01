@@ -3,23 +3,32 @@ import streamlit as st
 from rag_engine import RAGEngine
 from logger import setup_logger
 
-# Set up logger for the UI layer
 logger = setup_logger()
 
-
-# Initialize the RAG engine — cached so it only loads once per session
 @st.cache_resource
 def load_engine():
     """Load and cache the RAG engine so documents aren't re-indexed on every rerender."""
     logger.info("Loading RAG engine via Streamlit cache")
     return RAGEngine()
 
-
 engine = load_engine()
 logger.info("Streamlit app started")
 
 st.title("Local Document Assistant")
-st.caption("Currently powered by Ollama + LlamaIndex + ChromaDB")
+st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
+
+# Privacy status bar
+st.success("Fully local — no data leaves your machine. No cloud, no API calls, no tracking.")
+
+with st.expander("How this works"):
+    st.markdown("""
+    - Your documents are processed and stored **entirely on your machine**
+    - The AI model runs locally via **Ollama** — no OpenAI, no external APIs
+    - Embeddings and document chunks are stored in a **local ChromaDB database**
+    - Nothing is transmitted to any external server at any point
+    """)
+
+st.divider()
 
 # Initialize chat history in session state
 if "messages" not in st.session_state:
