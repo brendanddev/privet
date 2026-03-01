@@ -63,7 +63,7 @@ with st.sidebar:
 
 
 # Main section
-# st.title("Local Document Assistant")
+st.title("Local Document Assistant")
 st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
 
 st.success("Fully local — no data leaves your machine. No cloud, no API calls, no tracking.")
@@ -81,8 +81,8 @@ st.divider()
 # Document upload
 with st.expander("Upload a document"):
     uploaded_file = st.file_uploader(
-        "Upload a PDF",
-        type=["pdf"],
+        "Upload a document",
+        type=["pdf", "txt", "docx", "csv"],
         help="Your file will be saved locally and added to the index"
     )
 
@@ -99,7 +99,7 @@ with st.expander("Upload a document"):
             with st.spinner(f"Indexing {uploaded_file.name}..."):
                 new_chunks = engine.add_document(save_path)
 
-            st.success(f"✅ {uploaded_file.name} added — {new_chunks} new chunks indexed")
+            st.success(f"{uploaded_file.name} added — {new_chunks} new chunks indexed")
             logger.info(f"File uploaded via UI: {uploaded_file.name} | Chunks added: {new_chunks}")
 
 # Initialize chat history
