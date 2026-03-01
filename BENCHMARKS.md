@@ -31,4 +31,17 @@ top -pid $(pgrep -f streamlit)
 | Model | gemma3:1b |
 | Embedding model | nomic-embed-text |
 
+
+## v0.2 — Persistent Index
+
+Added index persistence. ChromaDB is checked on startup and re-indexing is skipped if documents are already embedded.
+
+| Metric | Value |
+|---|---|
+| Startup time (persistent) | ~0.4s |
+| Query response time | ~2.7s |
+| Improvement | 95% faster startup |
+
+**What changed:** `_build_query_engine` now checks `chroma_collection.count()` before indexing. If chunks exist, it loads directly from the vector store using `VectorStoreIndex.from_vector_store()` instead of re-processing documents.
+
 ---
