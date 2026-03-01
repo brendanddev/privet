@@ -3,20 +3,22 @@ import chromadb
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
+from logger import setup_logger
 
 
 class RAGDebugger:
     """
     A debugging and inspection utility for RAG pipelines.
-    
+
     This class provides tools to inspect the contents of a ChromaDB vector store,
     analyze chunk quality, trace query retrieval, and understand how embeddings
     relate to one another.
-    
+
     Attributes:
         client (chromadb.PersistentClient): Connection to the ChromaDB instance
         collection (chromadb.Collection): The document collection being inspected
         query_log (list): A running log of all traced queries during this session
+        logger (logging.Logger): Logger instance for recording debugger activity
     """
 
     def __init__(self, chroma_path: str = "./chroma_db", collection_name: str = "documents"):
@@ -30,14 +32,18 @@ class RAGDebugger:
         self.client = chromadb.PersistentClient(path=chroma_path)
         self.collection = self.client.get_or_create_collection(collection_name)
         self.query_log = []  # Stores traced queries for the current session
+        self.logger = setup_logger()
+        self.logger.info(f"RAGDebugger initialized | Collection: {collection_name} | Chunks: {self.collection.count()}")
 
     def summary(self):
         """
         Print a high-level overview of the collection.
-        
+
         Shows total chunk count, indexed documents, chunk size stats,
         and the dimensionality of the stored embeddings.
         """
+        self.logger.info("Running collection summary")
+
         total = self.collection.count()
 
         # Fetch all documents, embeddings, and metadata from the collection
@@ -60,16 +66,19 @@ class RAGDebugger:
         print(f"Embedding dims:      {len(results['embeddings'][0])}")
         print("=" * 50)
 
+        self.logger.info(f"Summary complete | Total chunks: {total} | Files: {', '.join(files)}")
+
     def inspect_chunks(self, n: int = 5):
         """
         Print a human-readable preview of the first N chunks in the collection.
-        
+
         Useful for verifying that documents were ingested and chunked correctly,
         and for checking what metadata is being stored alongside each chunk.
 
         Args:
             n (int): Number of chunks to inspect. Defaults to 5.
         """
+        self.logger.info(f"Inspecting first {n} chunks")
         results = self.collection.peek(n)
 
         for i, (doc, embedding, metadata) in enumerate(zip(
@@ -83,14 +92,17 @@ class RAGDebugger:
             # Only show the first 2 values of the embedding for readability
             print(f"Embedding:  [{embedding[0]:.4f}, {embedding[1]:.4f}, ... ] ({len(embedding)} dims)")
 
+        self.logger.info(f"Chunk inspection complete | {n} chunks reviewed")
+
     def chunk_distribution(self):
         """
         Print a simple bar chart showing the distribution of chunk sizes.
-        
+
         Helps identify chunking quality issues:
         - Too many small chunks (< 200 chars) may indicate headers or noise
         - Very large chunks (1000+ chars) may reduce retrieval precision
         """
+        self.logger.info("Analyzing chunk size distribution")
         results = self.collection.get(include=["documents"])
 
         # Measure each chunk by character count
@@ -113,10 +125,12 @@ class RAGDebugger:
             bar = "█" * count
             print(f"  {bucket:10} | {bar} ({count})")
 
+        self.logger.info(f"Chunk distribution | {buckets}")
+
     def trace_query(self, query_text: str, n_results: int = 3):
         """
         Embed a query and show which chunks would be retrieved, along with similarity scores.
-        
+
         This simulates exactly what happens during a real RAG query — the query is embedded
         using the same model as the documents, then ChromaDB finds the closest matching chunks
         by vector similarity. The score shows how confident the retrieval is.
@@ -126,6 +140,8 @@ class RAGDebugger:
             n_results (int): Number of top chunks to retrieve. Defaults to 3.
         """
         from llama_index.embeddings.ollama import OllamaEmbedding
+
+        self.logger.info(f"Tracing query: '{query_text}' | Top {n_results} results")
 
         # Use the same embedding model as the one used during ingestion
         embed_model = OllamaEmbedding(model_name="nomic-embed-text")
@@ -152,6 +168,7 @@ class RAGDebugger:
             similarity = 1 - dist
             print(f"  [{i+1}] Score: {similarity:.4f} | File: {meta.get('file_name')} | Page: {meta.get('page_label')}")
             print(f"       {doc[:200]}\n")
+            self.logger.info(f"  Chunk {i+1} | Score: {similarity:.4f} | File: {meta.get('file_name')} | Page: {meta.get('page_label')}")
 
         # Log the query for later review
         self.query_log.append({
@@ -163,7 +180,7 @@ class RAGDebugger:
     def chunk_similarity_matrix(self, n: int = 10):
         """
         Print a cosine similarity matrix for the first N chunks.
-        
+
         Cosine similarity measures how semantically similar two chunks are,
         on a scale from 0 (completely different) to 1 (identical meaning).
         High similarity between different chunks may indicate redundant content.
@@ -171,6 +188,7 @@ class RAGDebugger:
         Args:
             n (int): Number of chunks to compare. Defaults to 10.
         """
+        self.logger.info(f"Computing similarity matrix for first {n} chunks")
         results = self.collection.get(include=["embeddings", "documents"])
 
         # Take the first N embeddings and convert to a numpy array for computation
@@ -186,20 +204,25 @@ class RAGDebugger:
             scores = "  ".join([f"{v:.2f}" for v in row])
             print(f"C{i+1:02}  {scores}")
 
+        self.logger.info("Similarity matrix complete")
+
     def query_history(self):
         """
         Print a log of all queries traced during the current session.
-        
+
         Useful for reviewing what was tested and how many chunks each query retrieved.
         Note: this log resets each time the debugger is instantiated.
         """
         if not self.query_log:
             print("No queries logged yet.")
+            self.logger.info("Query history requested but log is empty")
             return
 
         print("\nQuery Log:")
         for entry in self.query_log:
             print(f"  [{entry['timestamp']}] '{entry['query']}' — {entry['results']} chunks retrieved")
+
+        self.logger.info(f"Query history printed | {len(self.query_log)} entries")
 
 
 if __name__ == "__main__":

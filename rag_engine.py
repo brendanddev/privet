@@ -5,14 +5,15 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageCon
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
+from logger import setup_logger
 
 
 class RAGEngine:
     """
-    Handles all RAG pipeline logic including model configuration, document ingestion, 
+    Handles all RAG pipeline logic including model configuration, document ingestion,
     vector storage, and query execution.
 
-    This class is intentionally decoupled from the UI layer so it can be reused, tested, 
+    This class is intentionally decoupled from the UI layer so it can be reused, tested,
     or swapped out independently.
     """
 
@@ -44,6 +45,10 @@ class RAGEngine:
         self.startup_time = None
         self.last_query_time = None
 
+        # Set up logger for the engine
+        self.logger = setup_logger()
+        self.logger.info(f"Initializing RAGEngine | LLM: {llm_model} | Embed: {embed_model}")
+
         # Configure global LlamaIndex settings with local Ollama models
         Settings.llm = Ollama(model=llm_model, request_timeout=request_timeout)
         Settings.embed_model = OllamaEmbedding(model_name=embed_model)
@@ -53,7 +58,7 @@ class RAGEngine:
         self.query_engine = self._build_query_engine()
         self.startup_time = round(time.time() - start, 2)
 
-        print(f"[RAGEngine] Ready in {self.startup_time}s")
+        self.logger.info(f"Engine ready | Startup time: {self.startup_time}s | Chunks indexed: {self._get_chunk_count()}")
 
     def _build_query_engine(self):
         """
@@ -62,6 +67,8 @@ class RAGEngine:
         Returns:
             query_engine: A LlamaIndex query engine ready to answer questions
         """
+        self.logger.info(f"Building query engine | Docs path: {self.docs_path} | Collection: {self.collection_name}")
+
         # Connect to ChromaDB and get or create the collection
         chroma_client = chromadb.PersistentClient(path=self.chroma_path)
         chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
@@ -72,11 +79,26 @@ class RAGEngine:
 
         # Load all documents from the docs directory
         docs = SimpleDirectoryReader(self.docs_path).load_data()
+        self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
 
         # Build the vector index from the loaded documents
         index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
+        self.logger.info("Vector index built successfully")
 
         return index.as_query_engine(similarity_top_k=3)
+
+    def _get_chunk_count(self) -> int:
+        """
+        Return total number of chunks stored in the collection.
+
+        Used for logging and benchmarking after indexing completes.
+
+        Returns:
+            int: Total number of chunks in the ChromaDB collection
+        """
+        client = chromadb.PersistentClient(path=self.chroma_path)
+        collection = client.get_or_create_collection(self.collection_name)
+        return collection.count()
 
     def query(self, question: str) -> dict:
         """
@@ -88,12 +110,12 @@ class RAGEngine:
         Returns:
             dict: Contains 'answer' (str), 'sources' (list of dicts), and 'query_time' (float)
         """
+        self.logger.info(f"Query received: '{question}'")
+
         # Time the query so we can benchmark response speed
         start = time.time()
         response = self.query_engine.query(question)
         self.last_query_time = round(time.time() - start, 2)
-
-        print(f"[RAGEngine] Query completed in {self.last_query_time}s")
 
         # Extract source information from the retrieved chunks
         sources = []
@@ -105,6 +127,8 @@ class RAGEngine:
                 "preview": node.text[:150]
             })
 
+        self.logger.info(f"Query completed | Time: {self.last_query_time}s | Sources retrieved: {len(sources)}")
+
         return {
             "answer": str(response),
             "sources": sources,
@@ -114,7 +138,7 @@ class RAGEngine:
     def get_stats(self) -> dict:
         """
         Return current engine performance stats.
-        
+
         Useful for displaying benchmarks in the UI or logging baseline metrics.
 
         Returns:

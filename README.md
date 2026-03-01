@@ -40,11 +40,12 @@ All benchmarks run on a MacBook Air M-series, 8GB RAM.
 ### Current Baseline (v0.1)
 | Metric | Value |
 |---|---|
-| Startup / index time | _s |
-| Query response time | _s |
-| RAM usage (idle) | _ MB |
-| RAM usage (during query) | _ MB |
-| ChromaDB index size on disk | _ MB |
+| Startup / index time | 9.67s |
+| Query response time | ~2.7s |
+| RAM usage (idle) | ~353 MB |
+| RAM usage (during query) | ~380 MB |
+| ChromaDB index size on disk | 4.4MB |
+| Chunks indexed | 112 |
 | Embedding dimensions | 768 |
 | Embedding precision | float32 |
 | Avg chunk size | 1232 chars |
