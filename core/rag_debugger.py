@@ -3,7 +3,7 @@ import chromadb
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
-from logger import setup_logger
+from utils.logger import setup_logger
 
 
 class RAGDebugger:

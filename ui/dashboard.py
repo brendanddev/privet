@@ -2,8 +2,8 @@
 import os
 import streamlit as st
 import plotly.graph_objects as go
-from rag_debugger import RAGDebugger
-from logger import setup_logger
+from core.rag_debugger import RAGDebugger
+from utils.logger import setup_logger
 
 logger = setup_logger()
 

@@ -2,9 +2,9 @@
 import os
 import streamlit as st
 import chromadb
-from rag_engine import RAGEngine
-from dashboard import render_sidebar
-from logger import setup_logger
+from core.rag_engine import RAGEngine
+from ui.dashboard import render_sidebar
+from utils.logger import setup_logger
 
 logger = setup_logger()
 
