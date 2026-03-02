@@ -31,6 +31,19 @@ Most AI document tools send your data to the cloud. This project is built around
 - **Debug sidebar** — live panel with engine stats, chunk distribution chart, index health indicators, and retrieval confidence meters
 - **Structured logging** — all engine activity written to daily log files in `logs/`
 - **RAG Debugger** — standalone inspection tool to analyze chunks, embeddings, similarity scores, and trace queries
+- **Docker support** — run the entire stack with a single command, no manual setup required
+
+---
+
+## Stack
+
+| Component | Library | Purpose |
+|---|---|---|
+| LLM | Ollama | Runs the language model locally |
+| RAG Framework | LlamaIndex 0.14.15 | Document ingestion and retrieval |
+| Vector Store | ChromaDB 1.5.2 | Local embedding storage |
+| UI | Streamlit 1.54.0 | Browser-based chat interface |
+| Containers | Docker + Compose | Single command deployment |
 
 ---
 
@@ -42,7 +55,43 @@ Most AI document tools send your data to the cloud. This project is built around
 
 ## Setup
 
-### Installation
+### Option 1 — Docker (recommended)
+
+The easiest way to run the app. No Python setup required.
+```bash
+git clone https://github.com/brendanddev/local-rag-assistant.git
+cd local-rag-assistant
+docker compose up --build
+```
+
+Then open your browser to `http://localhost:8501`
+
+On first run Docker will pull the Ollama image and download the required models automatically. This takes a few minutes. Every run after is fast.
+
+**GPU support:**
+- **Linux + NVIDIA:** Works automatically
+- **Mac:** Ollama uses Apple Metal automatically, no extra config needed. Remove the `deploy` block from `docker-compose.yml`
+- **Windows:** Requires WSL2 with NVIDIA drivers
+
+**To stop:**
+```bash
+docker compose down
+```
+
+**To stop and remove all data including downloaded models:**
+```bash
+docker compose down -v
+```
+
+---
+
+### Option 2 — Manual Setup
+
+**Prerequisites:**
+- [Ollama](https://ollama.com) installed and running
+- Python 3.11+
+
+**Install:**
 ```bash
 git clone https://github.com/brendanddev/local-rag-assistant.git
 cd local-rag-assistant
@@ -51,17 +100,16 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Pull required models
+**Pull required models:**
 ```bash
 ollama pull gemma3:1b
 ollama pull nomic-embed-text
 ```
 
-### Add your documents
-
+**Add your documents:**
 Drop any supported file (PDF, TXT, DOCX, CSV) into the `docs/` folder, or upload directly through the UI.
 
-### Run
+**Run:**
 ```bash
 # Terminal 1 — start Ollama
 ollama serve
@@ -72,7 +120,7 @@ streamlit run app.py
 
 Then open your browser to `http://localhost:8501`
 
-### Run the debugger
+**Run the debugger:**
 ```bash
 python3 core/rag_debugger.py
 ```
@@ -91,6 +139,9 @@ local-rag-assistant/
 ├── utils/
 │   └── logger.py           # Logging configuration
 ├── app.py                  # Streamlit UI entry point
+├── Dockerfile              # App container definition
+├── docker-compose.yml      # Multi-container orchestration
+├── entrypoint.sh           # Container startup script
 ├── docs/                   # Drop your documents here
 ├── chroma_db/              # Vector store (auto-generated)
 ├── logs/                   # Daily log files (auto-generated)

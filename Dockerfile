@@ -5,10 +5,12 @@ FROM python:3.11-slim
 # Set working dir inside container
 WORKDIR /app
 
-# Copy requirements first (Docker caches this layer so deps only reinstall when it changes)
-COPY requirements.txt .
+# Install curl for the health check in entrypoint.sh
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
+# Copy requirements first (Docker caches this layer so deps only reinstall when it changes)
+# and install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
@@ -21,4 +23,6 @@ RUN mkdir -p docs logs
 EXPOSE 8501
 
 # Run the app
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+CMD ["./entrypoint.sh"]

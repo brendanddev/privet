@@ -1,4 +1,5 @@
 
+import os
 import time
 import chromadb
 from llama_index.core.node_parser import SentenceSplitter
@@ -51,11 +52,22 @@ class RAGEngine:
         self.logger = setup_logger()
         self.logger.info(f"Initializing RAGEngine | LLM: {llm_model} | Embed: {embed_model}")
 
+        # Use OLLAMA_HOST env var if set, otherwise default to localhost
+        # This allows the same code to work locally and inside Docker
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
         # Configure global LlamaIndex settings with local Ollama models
-        Settings.llm = Ollama(model=llm_model, request_timeout=request_timeout)
-        
+        Settings.llm = Ollama(
+            model=llm_model,
+            request_timeout=request_timeout,
+            base_url=ollama_host
+        )
+
         # Wrap with float16 quantization, halves storage size with negligible quality loss
-        base_embed = OllamaEmbedding(model_name=embed_model)
+        base_embed = OllamaEmbedding(
+            model_name=embed_model,
+            base_url=ollama_host
+        )
         Settings.embed_model = Float16EmbeddingWrapper(base_embed)
 
         # Build the query engine and record how long it takes
