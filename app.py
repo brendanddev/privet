@@ -96,7 +96,7 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        result = engine.query(prompt)
+        result = engine.query(prompt, chat_history=st.session_state.messages)
         st.markdown(result["answer"])
         st.caption(f"Response time: {result['query_time']}s")
 

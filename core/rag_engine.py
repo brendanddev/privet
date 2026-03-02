@@ -136,24 +136,46 @@ class RAGEngine:
         collection = client.get_or_create_collection(self.collection_name)
         return collection.count()
 
-    def query(self, question: str) -> dict:
+    def query(self, question: str, chat_history: list = None) -> dict:
         """
-        Run a question through the RAG pipeline and return the answer with sources.
+        Run a question through the RAG pipeline with optional conversation history.
+
+        Chat history is prepended to the query context so the model can reference previous exchanges. 
+        Only the last 6 messages are included to stay within the model's context window and avoid hitting 
+        token limits.
 
         Args:
             question (str): The user's question
+            chat_history (list): List of dicts with 'role' and 'content' keys
 
         Returns:
             dict: Contains 'answer' (str), 'sources' (list of dicts), and 'query_time' (float)
         """
         self.logger.info(f"Query received: '{question}'")
 
-        # Time the query so we can benchmark response speed
+        # Build context string from recent chat history
+        # Capped at 6 messages (3 exchanges) to avoid exceeding context window
+        history_context = ""
+        if chat_history:
+            recent = chat_history[-6:]
+            for msg in recent:
+                role = "User" if msg["role"] == "user" else "Assistant"
+                history_context += f"{role}: {msg['content']}\n"
+
+        # Prepend history to question so model has conversational context
+        if history_context:
+            contextual_question = f"""Previous conversation:
+    {history_context}
+    Current question: {question}
+
+    Answer the current question, taking into account the conversation above if relevant."""
+        else:
+            contextual_question = question
+
         start = time.time()
-        response = self.query_engine.query(question)
+        response = self.query_engine.query(contextual_question)
         self.last_query_time = round(time.time() - start, 2)
 
-        # Extract source information from the retrieved chunks
         sources = []
         for node in response.source_nodes:
             sources.append({
