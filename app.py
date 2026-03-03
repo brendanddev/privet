@@ -96,11 +96,23 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        result = engine.query(prompt, chat_history=st.session_state.messages)
-        st.markdown(result["answer"])
-        st.caption(f"Response time: {result['query_time']}s")
+        # Stream the response token by token
+        response_placeholder = st.empty()
+        full_response = ""
 
-        # Store sources in session state so sidebar can display them
+        for token in engine.stream_query(prompt, chat_history=st.session_state.messages):
+            full_response += token
+            response_placeholder.markdown(full_response + "▌")
+
+        # Final render without the cursor
+        response_placeholder.markdown(full_response)
+
+        # Show response time and sources after streaming completes
+        st.caption(f"Response time: {engine.last_query_time}s")
+
+        # Get sources from the last regular query for display
+        # We run a quick metadata-only lookup for source info
+        result = engine.query(prompt, chat_history=st.session_state.messages)
         st.session_state.last_sources = result["sources"]
 
         if result["sources"]:
@@ -112,5 +124,5 @@ if prompt := st.chat_input("Ask a question about your documents..."):
                     st.caption(f"_{source['preview']}_")
                     st.divider()
 
-        logger.info(f"Response delivered | Answer length: {len(result['answer'])} chars | Query time: {result['query_time']}s")
-        st.session_state.messages.append({"role": "assistant", "content": result["answer"]})
+        logger.info(f"Response delivered | Answer length: {len(full_response)} chars | Query time: {engine.last_query_time}s")
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
