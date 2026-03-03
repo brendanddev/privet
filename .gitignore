@@ -2,6 +2,9 @@
 # Logs
 logs/
 
+# Configuration
+config.yaml
+
 # Virtual envrionment
 venv/
 
