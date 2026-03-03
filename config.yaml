@@ -1,0 +1,29 @@
+
+# Local RAG Assistant Configuration
+
+# Model settings
+llm_model: gemma3:1b
+embed_model: nomic-embed-text
+
+# Ollama settings
+# Override with OLLAMA_HOST environment variable for Docker
+ollama_host: http://localhost:11434
+request_timeout: 120.0
+
+# Document processing
+chunk_size: 256
+chunk_overlap: 25
+
+# Retrieval settings
+# How many chunks to retrieve per query
+similarity_top_k: 3
+
+# Conversation memory
+# How many previous messages to include as context (each exchange = 2 messages)
+history_length: 6
+
+# Paths
+docs_path: ./docs
+chroma_path: ./chroma_db
+collection_name: documents
+logs_path: ./logs
