@@ -9,7 +9,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from core.embeddings import Float16EmbeddingWrapper
 from utils.logger import setup_logger
-
+from utils.config import load_config
 
 class RAGEngine:
     """
@@ -20,57 +20,45 @@ class RAGEngine:
     or swapped out independently.
     """
 
-    def __init__(
-        self,
-        docs_path: str = "./docs",
-        chroma_path: str = "./chroma_db",
-        collection_name: str = "documents",
-        llm_model: str = "gemma3:1b",
-        embed_model: str = "nomic-embed-text",
-        request_timeout: float = 120.0
-    ):
+    def __init__(self, config_path: str = "config.yaml"):
         """
-        Initialize the RAG engine and build the query engine from documents.
+        Initialize the RAG engine from a config file.
 
         Args:
-            docs_path (str): Path to the folder containing documents to index
-            chroma_path (str): Path to the ChromaDB persistence directory
-            collection_name (str): ChromaDB collection name
-            llm_model (str): Ollama LLM model name
-            embed_model (str): Ollama embedding model name
-            request_timeout (float): Timeout in seconds for Ollama requests
+            config_path (str): Path to the YAML config file
         """
-        self.docs_path = docs_path
-        self.chroma_path = chroma_path
-        self.collection_name = collection_name
-        self.llm_model = llm_model
-        self.embed_model_name = embed_model
+        config = load_config(config_path)
+
+        self.docs_path = config["docs_path"]
+        self.chroma_path = config["chroma_path"]
+        self.collection_name = config["collection_name"]
+        self.llm_model = config["llm_model"]
+        self.embed_model_name = config["embed_model"]
+        self.chunk_size = config["chunk_size"]
+        self.chunk_overlap = config["chunk_overlap"]
+        self.similarity_top_k = config["similarity_top_k"]
+        self.history_length = config["history_length"]
         self.startup_time = None
         self.last_query_time = None
 
-        # Set up logger for the engine
         self.logger = setup_logger()
-        self.logger.info(f"Initializing RAGEngine | LLM: {llm_model} | Embed: {embed_model}")
+        self.logger.info(f"Initializing RAGEngine | LLM: {self.llm_model} | Embed: {self.embed_model_name}")
 
-        # Use OLLAMA_HOST env var if set, otherwise default to localhost
-        # This allows the same code to work locally and inside Docker
-        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        # OLLAMA_HOST env var takes priority over config file
+        # This allows Docker to override without changing config.yaml
+        ollama_host = os.environ.get("OLLAMA_HOST", config["ollama_host"])
 
-        # Configure global LlamaIndex settings with local Ollama models
         Settings.llm = Ollama(
-            model=llm_model,
-            request_timeout=request_timeout,
+            model=self.llm_model,
+            request_timeout=config["request_timeout"],
             base_url=ollama_host
         )
-
-        # Wrap with float16 quantization, halves storage size with negligible quality loss
         base_embed = OllamaEmbedding(
-            model_name=embed_model,
+            model_name=self.embed_model_name,
             base_url=ollama_host
         )
         Settings.embed_model = Float16EmbeddingWrapper(base_embed)
 
-        # Build the query engine and record how long it takes
         start = time.time()
         self.query_engine = self._build_query_engine()
         self.startup_time = round(time.time() - start, 2)
@@ -111,8 +99,8 @@ class RAGEngine:
             # chunk_overlap: tokens shared between adjacent chunks — prevents
             # losing context at chunk boundaries
             splitter = SentenceSplitter(
-                chunk_size=256,
-                chunk_overlap=50
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap
             )
 
             docs = SimpleDirectoryReader(self.docs_path).load_data()
@@ -126,10 +114,10 @@ class RAGEngine:
             self.logger.info("Vector index built and persisted to ChromaDB")
 
         self.streaming_query_engine = index.as_query_engine(
-            similarity_top_k=3,
+            similarity_top_k=self.similarity_top_k,
             streaming=True
         )
-        return index.as_query_engine(similarity_top_k=3)
+        return index.as_query_engine(similarity_top_k=self.similarity_top_k)
 
     def _get_chunk_count(self) -> int:
         """
@@ -165,7 +153,7 @@ class RAGEngine:
         # Capped at 6 messages (3 exchanges) to avoid exceeding context window
         history_context = ""
         if chat_history:
-            recent = chat_history[-6:]
+            recent = chat_history[-self.history_length:]
             for msg in recent:
                 role = "User" if msg["role"] == "user" else "Assistant"
                 history_context += f"{role}: {msg['content']}\n"
