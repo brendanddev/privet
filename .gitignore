@@ -5,6 +5,9 @@ logs/
 # Configuration
 config.yaml
 
+# Models
+models/
+
 # Virtual envrionment
 venv/
 

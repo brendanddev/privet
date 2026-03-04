@@ -53,7 +53,6 @@ with st.expander("How this works"):
 
 st.divider()
 
-# Document upload
 with st.expander("Upload a document"):
     uploaded_file = st.file_uploader(
         "Upload a document",
@@ -87,7 +86,6 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Handle new user input
 if prompt := st.chat_input("Ask a question about your documents..."):
     logger.info(f"User submitted prompt via UI: '{prompt}'")
 
@@ -110,14 +108,14 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         # Show response time and sources after streaming completes
         st.caption(f"Response time: {engine.last_query_time}s")
 
-        # Get sources from the last regular query for display
-        # We run a quick metadata-only lookup for source info
-        result = engine.query(prompt, chat_history=st.session_state.messages)
-        st.session_state.last_sources = result["sources"]
+        # Sources are already populated from the streaming query
+        # No second query needed, retrieval happened before streaming began
+        sources = engine.last_sources
+        st.session_state.last_sources = sources
 
-        if result["sources"]:
+        if sources:
             with st.expander("Sources"):
-                for i, source in enumerate(result["sources"]):
+                for i, source in enumerate(sources):
                     st.markdown(f"**[{i+1}] {source['file']} — Page {source['page']}**")
                     if source["score"]:
                         st.caption(f"Relevance score: {source['score']}")

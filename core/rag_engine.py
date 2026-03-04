@@ -40,6 +40,7 @@ class RAGEngine:
         self.history_length = config["history_length"]
         self.startup_time = None
         self.last_query_time = None
+        self.last_sources = []
 
         self.logger = setup_logger()
         self.logger.info(f"Initializing RAGEngine | LLM: {self.llm_model} | Embed: {self.embed_model_name}")
@@ -67,10 +68,14 @@ class RAGEngine:
 
     def _build_query_engine(self):
         """
-        Sets up ChromaDB, ingest documents, and build the index.
+        Sets up ChromaDB, ingests documents, and builds the index.
 
         Checks if documents have already been indexed and skips re-embedding if so.
         This dramatically reduces startup time on subsequent runs.
+
+        If the docs folder is empty and no existing index exists, returns a query
+        engine over an empty index rather than crashing. Documents can be added
+        through the UI without restarting.
 
         Returns:
             query_engine: A LlamaIndex query engine ready to answer questions
@@ -87,31 +92,37 @@ class RAGEngine:
         if existing_count > 0:
             self.logger.info(f"Existing index found | {existing_count} chunks | Skipping re-indexing")
             index = VectorStoreIndex.from_vector_store(vector_store)
-            self.streaming_query_engine = index.as_query_engine(
-                similarity_top_k=3,
-                streaming=True
-            )
+
         else:
-            self.logger.info("No existing index found — indexing documents for the first time")
+            # Check if docs folder has any files before attempting to load
+            os.makedirs(self.docs_path, exist_ok=True)
+            doc_files = [
+                f for f in os.listdir(self.docs_path)
+                if not f.startswith(".")
+            ]
 
-            # SentenceSplitter controls how documents are chunked
-            # chunk_size: max tokens per chunk — smaller = more precise retrieval
-            # chunk_overlap: tokens shared between adjacent chunks — prevents
-            # losing context at chunk boundaries
-            splitter = SentenceSplitter(
-                chunk_size=self.chunk_size,
-                chunk_overlap=self.chunk_overlap
-            )
+            if not doc_files:
+                # No documents and no existing index — build an empty index
+                # The app will still load and the user can upload documents via the UI
+                self.logger.warning("No documents found in docs/ folder — starting with empty index")
+                index = VectorStoreIndex.from_vector_store(vector_store)
+            else:
+                self.logger.info("No existing index found — indexing documents for the first time")
 
-            docs = SimpleDirectoryReader(self.docs_path).load_data()
-            self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
+                splitter = SentenceSplitter(
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap
+                )
 
-            index = VectorStoreIndex.from_documents(
-                docs,
-                storage_context=storage_context,
-                transformations=[splitter]
-            )
-            self.logger.info("Vector index built and persisted to ChromaDB")
+                docs = SimpleDirectoryReader(self.docs_path).load_data()
+                self.logger.info(f"Loaded {len(docs)} document pages from {self.docs_path}")
+
+                index = VectorStoreIndex.from_documents(
+                    docs,
+                    storage_context=storage_context,
+                    transformations=[splitter]
+                )
+                self.logger.info("Vector index built and persisted to ChromaDB")
 
         self.streaming_query_engine = index.as_query_engine(
             similarity_top_k=self.similarity_top_k,
@@ -123,8 +134,6 @@ class RAGEngine:
         """
         Return total number of chunks stored in the collection.
 
-        Used for logging and benchmarking after indexing completes.
-
         Returns:
             int: Total number of chunks in the ChromaDB collection
         """
@@ -132,13 +141,52 @@ class RAGEngine:
         collection = client.get_or_create_collection(self.collection_name)
         return collection.count()
 
+    def _build_history_context(self, chat_history: list) -> str:
+        """
+        Build a context string from recent chat history.
+
+        Extracted into its own method to avoid duplicating this logic
+        across query() and stream_query().
+
+        Args:
+            chat_history (list): List of dicts with 'role' and 'content' keys
+
+        Returns:
+            str: Formatted history string, empty string if no history
+        """
+        if not chat_history:
+            return ""
+
+        recent = chat_history[-self.history_length:]
+        context = ""
+        for msg in recent:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            context += f"{role}: {msg['content']}\n"
+        return context
+
+    def _build_contextual_question(self, question: str, history_context: str) -> str:
+        """
+        Prepend conversation history to the question for the model.
+
+        Args:
+            question (str): The user's current question
+            history_context (str): Formatted history string from _build_history_context
+
+        Returns:
+            str: Full prompt with history and question
+        """
+        if not history_context:
+            return question
+
+        return f"""Previous conversation:
+{history_context}
+Current question: {question}
+
+Answer the current question, taking into account the conversation above if relevant."""
+
     def query(self, question: str, chat_history: list = None) -> dict:
         """
         Run a question through the RAG pipeline with optional conversation history.
-
-        Chat history is prepended to the query context so the model can reference previous exchanges. 
-        Only the last 6 messages are included to stay within the model's context window and avoid hitting 
-        token limits.
 
         Args:
             question (str): The user's question
@@ -149,24 +197,8 @@ class RAGEngine:
         """
         self.logger.info(f"Query received: '{question}'")
 
-        # Build context string from recent chat history
-        # Capped at 6 messages (3 exchanges) to avoid exceeding context window
-        history_context = ""
-        if chat_history:
-            recent = chat_history[-self.history_length:]
-            for msg in recent:
-                role = "User" if msg["role"] == "user" else "Assistant"
-                history_context += f"{role}: {msg['content']}\n"
-
-        # Prepend history to question so model has conversational context
-        if history_context:
-            contextual_question = f"""Previous conversation:
-    {history_context}
-    Current question: {question}
-
-    Answer the current question, taking into account the conversation above if relevant."""
-        else:
-            contextual_question = question
+        history_context = self._build_history_context(chat_history)
+        contextual_question = self._build_contextual_question(question, history_context)
 
         start = time.time()
         response = self.query_engine.query(contextual_question)
@@ -181,6 +213,7 @@ class RAGEngine:
                 "preview": node.text[:150]
             })
 
+        self.last_sources = sources
         self.logger.info(f"Query completed | Time: {self.last_query_time}s | Sources retrieved: {len(sources)}")
 
         return {
@@ -188,16 +221,17 @@ class RAGEngine:
             "sources": sources,
             "query_time": self.last_query_time
         }
-    
+
     def stream_query(self, question: str, chat_history: list = None):
         """
         Run a question through the RAG pipeline and stream the response token by token.
 
-        Instead of waiting for the full answer, this yields each token as it is generated by the model. 
-        This makes the app feel significantly more responsive even when total generation time is the same.
-
-        The retrieval step (finding relevant chunks) still happens upfront before streaming begins. 
-        Only the generation step is streamed.
+        Retrieval happens upfront, source nodes are available immediately after the
+        streaming response object is created, before any tokens are generated. This is
+        how LlamaIndex's streaming response works internally: the retrieval step is
+        synchronous, only the generation step is streamed. We extract sources from
+        source_nodes right after retrieval and store them on self.last_sources so
+        app.py can access them without running a second query.
 
         Args:
             question (str): The user's question
@@ -208,29 +242,29 @@ class RAGEngine:
         """
         self.logger.info(f"Stream query received: '{question}'")
 
-        # Build context from chat history. same as regular query
-        history_context = ""
-        if chat_history:
-            recent = chat_history[-6:]
-            for msg in recent:
-                role = "User" if msg["role"] == "user" else "Assistant"
-                history_context += f"{role}: {msg['content']}\n"
-
-        if history_context:
-            contextual_question = f"""Previous conversation:
-    {history_context}
-    Current question: {question}
-
-    Answer the current question, taking into account the conversation above if relevant."""
-        else:
-            contextual_question = question
+        history_context = self._build_history_context(chat_history)
+        contextual_question = self._build_contextual_question(question, history_context)
 
         start = time.time()
 
-        # Use streaming query engine
+        # Retrieval happens here synchronously, source_nodes are populated
+        # before any tokens are generated
         streaming_response = self.streaming_query_engine.query(contextual_question)
 
-        # Yield each token as it arrives
+        # Extract sources immediately after retrieval, before streaming begins
+        # This is why we don't need a second query call in app.py
+        self.last_sources = []
+        for node in streaming_response.source_nodes:
+            self.last_sources.append({
+                "file": node.metadata.get("file_name", "Unknown"),
+                "page": node.metadata.get("page_label", "Unknown"),
+                "score": round(node.score, 4) if node.score else None,
+                "preview": node.text[:150]
+            })
+
+        self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
+
+        # Now stream the generation step token by token
         for token in streaming_response.response_gen:
             yield token
 
@@ -241,8 +275,6 @@ class RAGEngine:
         """
         Return current engine performance stats.
 
-        Useful for displaying benchmarks in the UI or logging baseline metrics.
-
         Returns:
             dict: Startup time, last query time, model names
         """
@@ -252,12 +284,12 @@ class RAGEngine:
             "llm_model": self.llm_model,
             "embed_model": self.embed_model_name,
         }
-    
+
     def add_document(self, file_path: str) -> int:
         """
         Ingest a single new document and add it to the existing index.
 
-        Does not re-index already embedded documents — only processes the new file.
+        Does not re-index already embedded documents, only processes the new file.
 
         Args:
             file_path (str): Full path to the document to ingest
@@ -267,28 +299,28 @@ class RAGEngine:
         """
         self.logger.info(f"Adding new document: {file_path}")
 
-        # Load only the new document
         docs = SimpleDirectoryReader(input_files=[file_path]).load_data()
         self.logger.info(f"Loaded {len(docs)} pages from {file_path}")
 
-        # Connect to existing ChromaDB collection
         chroma_client = chromadb.PersistentClient(path=self.chroma_path)
         chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
         chunks_before = chroma_collection.count()
 
-        # Add new document to the existing vector store
         vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
         index = VectorStoreIndex.from_vector_store(vector_store)
-        
+
         for doc in docs:
             index.insert(doc)
 
         chunks_after = chroma_collection.count()
         new_chunks = chunks_after - chunks_before
 
-        # Refresh the query engine so it includes the new document
-        self.query_engine = index.as_query_engine(similarity_top_k=3)
+        self.query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
+        self.streaming_query_engine = index.as_query_engine(
+            similarity_top_k=self.similarity_top_k,
+            streaming=True
+        )
 
         self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {chunks_after}")
         return new_chunks
@@ -308,7 +340,6 @@ class RAGEngine:
         client = chromadb.PersistentClient(path=self.chroma_path)
         collection = client.get_or_create_collection(self.collection_name)
 
-        # Find all chunk IDs belonging to this file
         results = collection.get(include=["metadatas"])
         ids_to_delete = [
             results["ids"][i]
@@ -323,19 +354,19 @@ class RAGEngine:
         collection.delete(ids=ids_to_delete)
         self.logger.info(f"Removed {len(ids_to_delete)} chunks for {file_name}")
 
-        # Refresh the query engine
         vector_store = ChromaVectorStore(chroma_collection=collection)
         index = VectorStoreIndex.from_vector_store(vector_store)
-        self.query_engine = index.as_query_engine(similarity_top_k=3)
+        self.query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
+        self.streaming_query_engine = index.as_query_engine(
+            similarity_top_k=self.similarity_top_k,
+            streaming=True
+        )
 
         return True
-    
+
     def switch_models(self, llm_model: str, embed_model: str):
         """
         Switch the LLM and embedding model without restarting the app.
-
-        Reinitializes LlamaIndex settings and rebuilds the query engine using the new models. 
-        The index itself is not affected.. only the models used for generation and embedding are changed.
 
         Args:
             llm_model (str): New Ollama LLM model name
@@ -346,12 +377,9 @@ class RAGEngine:
         self.llm_model = llm_model
         self.embed_model_name = embed_model
 
-        # Reinitialize LlamaIndex settings with new models
         Settings.llm = Ollama(model=llm_model, request_timeout=120.0)
         base_embed = OllamaEmbedding(model_name=embed_model)
         Settings.embed_model = Float16EmbeddingWrapper(base_embed)
 
-        # Rebuild query engine with new models
         self.query_engine = self._build_query_engine()
-
         self.logger.info(f"Model switch complete | LLM: {llm_model} | Embed: {embed_model}")
