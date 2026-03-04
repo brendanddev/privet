@@ -5,9 +5,10 @@ import chromadb
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from core.providers.factory import get_provider
 from utils.logger import setup_logger
 from utils.config import load_config
+from core.providers.factory import get_provider
+
 
 class RAGEngine:
     """
@@ -15,7 +16,8 @@ class RAGEngine:
     vector storage, and query execution.
 
     This class is intentionally decoupled from the UI layer so it can be reused, tested,
-    or swapped out independently.
+    or swapped out independently. The provider abstraction means the engine works with
+    any backend — Ollama, llama.cpp, or future providers — without changes to this class.
     """
 
     def __init__(self, config_path: str = "config.yaml"):
@@ -27,6 +29,7 @@ class RAGEngine:
         """
         config = load_config(config_path)
 
+        self.config = config
         self.docs_path = config["docs_path"]
         self.chroma_path = config["chroma_path"]
         self.collection_name = config["collection_name"]
@@ -42,10 +45,6 @@ class RAGEngine:
 
         self.logger = setup_logger()
         self.logger.info(f"Initializing RAGEngine | LLM: {self.llm_model} | Embed: {self.embed_model_name}")
-
-        # OLLAMA_HOST env var takes priority over config file
-        # This allows Docker to override without changing config.yaml
-        ollama_host = os.environ.get("OLLAMA_HOST", config["ollama_host"])
 
         # Load provider from config — ollama or llamacpp
         self.provider = get_provider(config)
@@ -71,6 +70,9 @@ class RAGEngine:
         engine over an empty index rather than crashing. Documents can be added
         through the UI without restarting.
 
+        For llamacpp provider, applies a custom prompt template to prevent the
+        raw context chunks from leaking into the model's response.
+
         Returns:
             query_engine: A LlamaIndex query engine ready to answer questions
         """
@@ -88,7 +90,6 @@ class RAGEngine:
             index = VectorStoreIndex.from_vector_store(vector_store)
 
         else:
-            # Check if docs folder has any files before attempting to load
             os.makedirs(self.docs_path, exist_ok=True)
             doc_files = [
                 f for f in os.listdir(self.docs_path)
@@ -96,8 +97,6 @@ class RAGEngine:
             ]
 
             if not doc_files:
-                # No documents and no existing index — build an empty index
-                # The app will still load and the user can upload documents via the UI
                 self.logger.warning("No documents found in docs/ folder — starting with empty index")
                 index = VectorStoreIndex.from_vector_store(vector_store)
             else:
@@ -122,7 +121,21 @@ class RAGEngine:
             similarity_top_k=self.similarity_top_k,
             streaming=True
         )
-        return index.as_query_engine(similarity_top_k=self.similarity_top_k)
+        query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
+
+        # Apply custom prompt for llamacpp to prevent raw context leaking into responses
+        # Ollama handles prompt formatting internally so this is only needed for llamacpp
+        if self.config.get("provider") == "llamacpp":
+            from core.providers.llamacpp import QA_PROMPT
+            query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
+            self.streaming_query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
+            self.logger.info("Applied custom QA prompt for llamacpp provider")
+
+        return query_engine
 
     def _get_chunk_count(self) -> int:
         """
@@ -220,12 +233,9 @@ Answer the current question, taking into account the conversation above if relev
         """
         Run a question through the RAG pipeline and stream the response token by token.
 
-        Retrieval happens upfront, source nodes are available immediately after the
-        streaming response object is created, before any tokens are generated. This is
-        how LlamaIndex's streaming response works internally: the retrieval step is
-        synchronous, only the generation step is streamed. We extract sources from
-        source_nodes right after retrieval and store them on self.last_sources so
-        app.py can access them without running a second query.
+        Retrieval happens upfront — source nodes are available immediately after the
+        streaming response object is created, before any tokens are generated. Sources
+        are stored on self.last_sources so app.py can access them without a second query.
 
         Args:
             question (str): The user's question
@@ -241,12 +251,11 @@ Answer the current question, taking into account the conversation above if relev
 
         start = time.time()
 
-        # Retrieval happens here synchronously, source_nodes are populated
+        # Retrieval happens here synchronously — source_nodes are populated
         # before any tokens are generated
         streaming_response = self.streaming_query_engine.query(contextual_question)
 
-        # Extract sources immediately after retrieval, before streaming begins
-        # This is why we don't need a second query call in app.py
+        # Extract sources immediately after retrieval before streaming begins
         self.last_sources = []
         for node in streaming_response.source_nodes:
             self.last_sources.append({
@@ -258,7 +267,6 @@ Answer the current question, taking into account the conversation above if relev
 
         self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
 
-        # Now stream the generation step token by token
         for token in streaming_response.response_gen:
             yield token
 
@@ -283,7 +291,7 @@ Answer the current question, taking into account the conversation above if relev
         """
         Ingest a single new document and add it to the existing index.
 
-        Does not re-index already embedded documents, only processes the new file.
+        Does not re-index already embedded documents — only processes the new file.
 
         Args:
             file_path (str): Full path to the document to ingest
@@ -315,6 +323,16 @@ Answer the current question, taking into account the conversation above if relev
             similarity_top_k=self.similarity_top_k,
             streaming=True
         )
+
+        # Reapply custom prompt if using llamacpp
+        if self.config.get("provider") == "llamacpp":
+            from core.providers.llamacpp import QA_PROMPT
+            self.query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
+            self.streaming_query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
 
         self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {chunks_after}")
         return new_chunks
@@ -355,6 +373,16 @@ Answer the current question, taking into account the conversation above if relev
             similarity_top_k=self.similarity_top_k,
             streaming=True
         )
+
+        # Reapply custom prompt if using llamacpp
+        if self.config.get("provider") == "llamacpp":
+            from core.providers.llamacpp import QA_PROMPT
+            self.query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
+            self.streaming_query_engine.update_prompts(
+                {"response_synthesizer:text_qa_template": QA_PROMPT}
+            )
 
         return True
 

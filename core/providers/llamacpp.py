@@ -4,10 +4,22 @@ import numpy as np
 from typing import Generator, List
 from llama_cpp import Llama
 from llama_index.core.embeddings import BaseEmbedding
+from llama_index.core.llms import CustomLLM, CompletionResponse, CompletionResponseGen, LLMMetadata
+from llama_index.core.llms.callbacks import llm_completion_callback
+from llama_index.core import PromptTemplate
 from core.providers.base import BaseProvider
 from utils.logger import setup_logger
 
 logger = setup_logger()
+
+
+QA_PROMPT = PromptTemplate(
+    "You are a helpful assistant. Use the context below to answer the question.\n"
+    "Answer directly and concisely. Do not repeat the context or the question.\n\n"
+    "Context:\n{context_str}\n\n"
+    "Question: {query_str}\n\n"
+    "Answer:"
+)
 
 
 class LlamaCppEmbedding(BaseEmbedding):
@@ -55,6 +67,61 @@ class LlamaCppEmbedding(BaseEmbedding):
         return self._embed(text)
 
 
+class LlamaCppLLM(CustomLLM):
+    """
+    LlamaIndex compatible LLM wrapper around a llama.cpp model.
+
+    LlamaIndex requires Settings.llm to be a BaseLLM subclass.
+    This wrapper bridges the llama.cpp generation API to the
+    LlamaIndex interface so the rest of the app works without changes.
+
+    The model is stored via object.__setattr__ to bypass Pydantic
+    validation, same approach as LlamaCppEmbedding.
+    """
+
+    _model: object = None
+    context_window: int = 4096
+    num_output: int = 512
+    model_name: str = "llamacpp"
+
+    def __init__(self, model):
+        super().__init__()
+        object.__setattr__(self, '_model', model)
+
+    @property
+    def metadata(self) -> LLMMetadata:
+        return LLMMetadata(
+            context_window=self.context_window,
+            num_output=self.num_output,
+            model_name=self.model_name
+        )
+
+    @llm_completion_callback()
+    def complete(self, prompt: str, **kwargs) -> CompletionResponse:
+        response = self._model(
+            prompt,
+            max_tokens=self.num_output,
+            echo=False
+        )
+        return CompletionResponse(text=response["choices"][0]["text"].strip())
+
+    @llm_completion_callback()
+    def stream_complete(self, prompt: str, **kwargs) -> CompletionResponseGen:
+        def gen():
+            full = ""
+            for chunk in self._model(
+                prompt,
+                max_tokens=self.num_output,
+                stream=True,
+                echo=False
+            ):
+                token = chunk["choices"][0]["text"]
+                if token:
+                    full += token
+                    yield CompletionResponse(text=token, delta=token)
+        return gen()
+    
+
 class LlamaCppProvider(BaseProvider):
     """
     LLM provider using llama.cpp directly via llama-cpp-python.
@@ -79,14 +146,15 @@ class LlamaCppProvider(BaseProvider):
 
         logger.info(f"Loading llama.cpp generation model | Path: {model_path} | GPU layers: {n_gpu_layers}")
 
-        # Generation model - handles text generation
-        self.model = Llama(
+        # Generation model, handles text generation
+        _llm = Llama(
             model_path=model_path,
             n_gpu_layers=n_gpu_layers,
             n_ctx=n_ctx,
             n_threads=n_threads,
             verbose=False
         )
+        self.llm = LlamaCppLLM(_llm)
 
         logger.info(f"Loading llama.cpp embedding model | Path: {embed_model_path}")
 
@@ -106,23 +174,11 @@ class LlamaCppProvider(BaseProvider):
         logger.info("llama.cpp provider ready | Generation and embedding models loaded")
 
     def generate(self, prompt: str) -> str:
-        response = self.model(
-            prompt,
-            max_tokens=512,
-            echo=False
-        )
-        return response["choices"][0]["text"].strip()
+        return self.llm.complete(prompt).text
 
     def stream(self, prompt: str) -> Generator[str, None, None]:
-        for chunk in self.model(
-            prompt,
-            max_tokens=512,
-            stream=True,
-            echo=False
-        ):
-            token = chunk["choices"][0]["text"]
-            if token:
-                yield token
+        for chunk in self.llm.stream_complete(prompt):
+            yield chunk.delta
 
     def get_embeddings(self, text: str) -> list:
         return self.embed_model.get_text_embedding(text)
