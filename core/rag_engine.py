@@ -175,13 +175,22 @@ class RAGEngine:
         """
         Prepend conversation history to the question for the model.
 
+        Conversation history is disabled for llamacpp provider because
+        small GGUF models struggle to handle both RAG context and chat
+        history simultaneously without hallucinating conversation structure.
+        History will be re-enabled once a larger model is tested.
+
         Args:
             question (str): The user's current question
             history_context (str): Formatted history string from _build_history_context
 
         Returns:
-            str: Full prompt with history and question
+            str: Full prompt with or without history depending on provider
         """
+        # Disable history for llamacpp — small models hallucinate with combined context
+        if self.config.get("provider") == "llamacpp":
+            return question
+
         if not history_context:
             return question
 

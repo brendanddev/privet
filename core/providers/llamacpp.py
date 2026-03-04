@@ -14,11 +14,20 @@ logger = setup_logger()
 
 
 QA_PROMPT = PromptTemplate(
-    "You are a helpful assistant. Use the context below to answer the question.\n"
-    "Answer directly and concisely. Do not repeat the context or the question.\n\n"
+    "<start_of_turn>system\n"
+    "You are a helpful assistant. Answer the user's question using only the provided context.\n"
+    "Rules:\n"
+    "- Answer in 2-3 sentences maximum\n"
+    "- Do not repeat the question\n"
+    "- Do not include file paths or metadata\n"
+    "- Do not simulate a conversation or add fake follow-up questions\n"
+    "- If the context does not contain the answer, say 'I don't have enough information to answer that'\n"
+    "<end_of_turn>\n"
+    "<start_of_turn>user\n"
     "Context:\n{context_str}\n\n"
-    "Question: {query_str}\n\n"
-    "Answer:"
+    "Question: {query_str}\n"
+    "<end_of_turn>\n"
+    "<start_of_turn>model\n"
 )
 
 
