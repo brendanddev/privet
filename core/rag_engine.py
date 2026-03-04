@@ -5,9 +5,7 @@ import chromadb
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.llms.ollama import Ollama
-from llama_index.embeddings.ollama import OllamaEmbedding
-from core.embeddings import Float16EmbeddingWrapper
+from core.providers.factory import get_provider
 from utils.logger import setup_logger
 from utils.config import load_config
 
@@ -49,16 +47,12 @@ class RAGEngine:
         # This allows Docker to override without changing config.yaml
         ollama_host = os.environ.get("OLLAMA_HOST", config["ollama_host"])
 
-        Settings.llm = Ollama(
-            model=self.llm_model,
-            request_timeout=config["request_timeout"],
-            base_url=ollama_host
-        )
-        base_embed = OllamaEmbedding(
-            model_name=self.embed_model_name,
-            base_url=ollama_host
-        )
-        Settings.embed_model = Float16EmbeddingWrapper(base_embed)
+        # Load provider from config — ollama or llamacpp
+        self.provider = get_provider(config)
+
+        # Wire provider into LlamaIndex settings
+        Settings.llm = self.provider.llm if hasattr(self.provider, 'llm') else Settings.llm
+        Settings.embed_model = self.provider.embed_model
 
         start = time.time()
         self.query_engine = self._build_query_engine()
@@ -366,20 +360,27 @@ Answer the current question, taking into account the conversation above if relev
 
     def switch_models(self, llm_model: str, embed_model: str):
         """
-        Switch the LLM and embedding model without restarting the app.
+        Switch models without restarting the app.
+
+        Updates config values and reloads the provider so the new
+        models are used for all subsequent queries.
 
         Args:
-            llm_model (str): New Ollama LLM model name
-            embed_model (str): New Ollama embedding model name
+            llm_model (str): New model name
+            embed_model (str): New embedding model name
         """
         self.logger.info(f"Switching models | LLM: {llm_model} | Embed: {embed_model}")
 
         self.llm_model = llm_model
         self.embed_model_name = embed_model
 
-        Settings.llm = Ollama(model=llm_model, request_timeout=120.0)
-        base_embed = OllamaEmbedding(model_name=embed_model)
-        Settings.embed_model = Float16EmbeddingWrapper(base_embed)
+        config = load_config()
+        config["llm_model"] = llm_model
+        config["embed_model"] = embed_model
+
+        self.provider = get_provider(config)
+        Settings.llm = self.provider.llm if hasattr(self.provider, 'llm') else Settings.llm
+        Settings.embed_model = self.provider.embed_model
 
         self.query_engine = self._build_query_engine()
         self.logger.info(f"Model switch complete | LLM: {llm_model} | Embed: {embed_model}")
