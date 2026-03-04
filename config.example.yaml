@@ -27,3 +27,8 @@ docs_path: ./docs
 chroma_path: ./chroma_db
 collection_name: documents
 logs_path: ./logs
+
+# Feedback collection
+# Set to false to disable rating buttons and stop logging feedback
+collect_feedback: true
+feedback_path: ./feedback/feedback.jsonl

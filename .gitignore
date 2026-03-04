@@ -8,6 +8,9 @@ config.yaml
 # Models
 models/
 
+# User feedback
+feedback/
+
 # Virtual envrionment
 venv/
 

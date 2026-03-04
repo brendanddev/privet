@@ -5,6 +5,8 @@ import chromadb
 from core.rag_engine import RAGEngine
 from ui.dashboard import render_sidebar
 from utils.logger import setup_logger
+from utils.feedback import log_feedback
+from utils.config import load_config
 
 logger = setup_logger()
 
@@ -94,7 +96,6 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        # Stream the response token by token
         response_placeholder = st.empty()
         full_response = ""
 
@@ -102,14 +103,9 @@ if prompt := st.chat_input("Ask a question about your documents..."):
             full_response += token
             response_placeholder.markdown(full_response + "▌")
 
-        # Final render without the cursor
         response_placeholder.markdown(full_response)
-
-        # Show response time and sources after streaming completes
         st.caption(f"Response time: {engine.last_query_time}s")
 
-        # Sources are already populated from the streaming query
-        # No second query needed, retrieval happened before streaming began
         sources = engine.last_sources
         st.session_state.last_sources = sources
 
@@ -124,3 +120,48 @@ if prompt := st.chat_input("Ask a question about your documents..."):
 
         logger.info(f"Response delivered | Answer length: {len(full_response)} chars | Query time: {engine.last_query_time}s")
         st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+        # Store everything needed for feedback in session state
+        # so the buttons can access it after Streamlit reruns the script
+        st.session_state.last_prompt = prompt
+        st.session_state.last_response = full_response
+
+config = load_config()
+if config.get("collect_feedback", True) and st.session_state.get("last_prompt"):
+    
+    # Only show buttons if this response hasn't been rated yet
+    if not st.session_state.get("feedback_given"):
+        st.caption("Was this answer helpful?")
+        col1, col2, col3 = st.columns([1, 1, 8])
+
+        with col1:
+            if st.button("👍", key="thumbs_up"):
+                log_feedback(
+                    feedback_path=config["feedback_path"],
+                    question=st.session_state.last_prompt,
+                    answer=st.session_state.last_response,
+                    rating="thumbs_up",
+                    sources=st.session_state.get("last_sources", []),
+                    model=engine.llm_model,
+                    query_time=engine.last_query_time
+                )
+                st.session_state.feedback_given = True
+                st.toast("Thanks for the feedback!")
+                st.rerun()
+
+        with col2:
+            if st.button("👎", key="thumbs_down"):
+                log_feedback(
+                    feedback_path=config["feedback_path"],
+                    question=st.session_state.last_prompt,
+                    answer=st.session_state.last_response,
+                    rating="thumbs_down",
+                    sources=st.session_state.get("last_sources", []),
+                    model=engine.llm_model,
+                    query_time=engine.last_query_time
+                )
+                st.session_state.feedback_given = True
+                st.toast("Got it — noted for improvement.")
+                st.rerun()
+    else:
+        st.caption("✓ Feedback received")
