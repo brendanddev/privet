@@ -23,6 +23,9 @@ chroma_db/
 # Environment variables
 .env
 
+# Project Context
+CONTEXT.md
+
 # Others
 __pycache__/
 *.pyc
