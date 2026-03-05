@@ -20,12 +20,17 @@ Most AI document tools send your data to the cloud. This project is built around
 ## Features
 
 - **Fully local pipeline** — every component runs on your machine, no external API calls
+- **Provider abstraction** — swap between Ollama and llama.cpp via a single config value, no code changes required
+- **llama.cpp support** — run GGUF models directly with no background service, no open ports, direct Metal acceleration on Apple Silicon
 - **Multi-format document ingestion** — supports PDF, TXT, DOCX, and CSV via folder drop or direct UI upload
 - **Persistent index** — documents are only embedded once, startup is near-instant on subsequent runs
 - **Document management** — add and remove documents through the UI, index stays in sync
+- **Streaming responses** — answers stream token by token for immediate feedback
 - **Source citations** — every answer includes the source document and page number it was pulled from
 - **Relevance scoring** — see how confident the retrieval was for each source chunk
-- **Model switcher** — swap LLM and embedding models from the sidebar without restarting
+- **Conversation memory** — the model remembers previous exchanges in the same session
+- **Feedback system** — rate answers with thumbs up or down, feedback logged locally for future analysis and fine-tuning
+- **Model switcher** — swap LLM and embedding models from the sidebar without restarting, provider-aware
 - **Float16 embedding quantization** — embeddings stored at half precision, 2x memory reduction with negligible quality loss
 - **Chunk size tuning** — documents split at 256 tokens for precise retrieval
 - **Debug sidebar** — live panel with engine stats, chunk distribution chart, index health indicators, and retrieval confidence meters
@@ -39,7 +44,8 @@ Most AI document tools send your data to the cloud. This project is built around
 
 | Component | Library | Purpose |
 |---|---|---|
-| LLM | Ollama | Runs the language model locally |
+| LLM (Ollama) | Ollama | Runs language models locally via HTTP |
+| LLM (llama.cpp) | llama-cpp-python | Runs GGUF models directly, no service required |
 | RAG Framework | LlamaIndex 0.14.15 | Document ingestion and retrieval |
 | Vector Store | ChromaDB 1.5.2 | Local embedding storage |
 | UI | Streamlit 1.54.0 | Browser-based chat interface |
@@ -48,8 +54,16 @@ Most AI document tools send your data to the cloud. This project is built around
 ---
 
 ## Models
-- **LLM:** `gemma3:1b` — lightweight local language model via Ollama
-- **Embeddings:** `nomic-embed-text` — local embedding model via Ollama
+
+### Ollama provider
+- **LLM:** `gemma3:1b` — lightweight local language model
+- **Embeddings:** `nomic-embed-text` — dedicated local embedding model
+
+### llama.cpp provider
+- **LLM:** `google_gemma-3-1b-it-Q4_K_M.gguf` — quantized Gemma 3 1B, ~800MB
+- **Embeddings:** `nomic-embed-text-v1.5.Q8_0.gguf` — quantized nomic embed, ~274MB
+
+Both GGUF models available from [Hugging Face](https://huggingface.co). Place them in the `models/` folder.
 
 ---
 
@@ -127,29 +141,61 @@ python3 core/rag_debugger.py
 
 ---
 
+## Feedback System
+
+Every answer can be rated with a thumbs up or down. Ratings are stored locally in `feedback/feedback.jsonl` — one JSON entry per rating including the question, answer, sources retrieved, model used, and query time.
+
+This data is used to identify patterns in answer quality and will serve as training data for future fine-tuning.
+
+To disable feedback collection set `collect_feedback: false` in `config.yaml`.
+
+---
+
 ## Project Structure
 ```
 local-rag-assistant/
 ├── core/
-│   ├── rag_engine.py       # RAG pipeline logic
-│   ├── rag_debugger.py     # Inspection and debugging tools
-│   └── embeddings.py       # Float16 embedding quantization wrapper
+│   ├── rag_engine.py           # RAG pipeline logic
+│   ├── rag_debugger.py         # Inspection and debugging tools
+│   ├── embeddings.py           # Float16 embedding quantization wrapper
+│   └── providers/
+│       ├── base.py             # Abstract provider interface
+│       ├── ollama.py           # Ollama provider implementation
+│       ├── llamacpp.py         # llama.cpp provider implementation
+│       └── factory.py          # Provider selection logic
 ├── ui/
-│   └── dashboard.py        # Sidebar debug panel
+│   └── dashboard.py            # Sidebar debug panel
 ├── utils/
-│   └── logger.py           # Logging configuration
-├── app.py                  # Streamlit UI entry point
-├── Dockerfile              # App container definition
-├── docker-compose.yml      # Multi-container orchestration
-├── entrypoint.sh           # Container startup script
-├── docs/                   # Drop your documents here
-├── chroma_db/              # Vector store (auto-generated)
-├── logs/                   # Daily log files (auto-generated)
-├── BENCHMARKS.md           # Performance data and optimization history
+│   ├── logger.py               # Logging configuration
+│   ├── config.py               # YAML config loader
+│   └── feedback.py             # Feedback logging utility
+├── app.py                      # Streamlit UI entry point
+├── config.yaml                 # Runtime configuration (gitignored)
+├── config.example.yaml         # Configuration template
+├── Dockerfile                  # App container definition
+├── docker-compose.yml          # Multi-container orchestration
+├── entrypoint.sh               # Container startup script
+├── models/                     # GGUF model files (gitignored)
+├── docs/                       # Drop your documents here
+├── chroma_db/                  # Vector store (auto-generated)
+├── logs/                       # Daily log files (auto-generated)
+├── feedback/                   # Feedback data (auto-generated, gitignored)
+├── BENCHMARKS.md               # Performance data and optimization history
 ├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
+
+---
+
+## Version History
+
+| Version | Changes |
+|---|---|
+| v1.0.0 | Initial release — Docker, float16 quantization, persistent index |
+| v1.1.0 | Conversation memory |
+| v1.2.0 | Streaming responses |
+| v1.3.0 | llama.cpp provider — direct GGUF loading, Metal acceleration, provider abstraction |
 
 ---
 

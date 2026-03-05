@@ -18,6 +18,21 @@ def load_engine():
     return RAGEngine()
 
 
+@st.cache_resource
+def get_config():
+    """
+    Load and cache config so it doesn't reload on every Streamlit rerun.
+
+    Without caching, load_config() fires on every single rerender which
+    happens constantly in Streamlit — on every button click, input change,
+    or state update. Caching it once means one file read for the session.
+
+    Returns:
+        dict: App configuration
+    """
+    return load_config()
+
+
 def get_collection_stats():
     """
     Fetch chunk count and unique document names directly from ChromaDB.
@@ -34,12 +49,11 @@ def get_collection_stats():
 
 
 engine = load_engine()
+config = get_config()
 logger.info("Streamlit app started")
 
-# Render sidebar debug panel
 render_sidebar(engine, get_collection_stats)
 
-# Main UI
 st.title("Local Document Assistant")
 st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
 
@@ -79,9 +93,17 @@ with st.expander("Upload a document"):
 
 st.divider()
 
-# Initialize chat history
+# Initialize all session state upfront so nothing is ever missing on rerun
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "last_sources" not in st.session_state:
+    st.session_state.last_sources = []
+if "last_prompt" not in st.session_state:
+    st.session_state.last_prompt = None
+if "last_response" not in st.session_state:
+    st.session_state.last_response = None
+if "feedback_given" not in st.session_state:
+    st.session_state.feedback_given = False
 
 # Render existing chat history
 for message in st.session_state.messages:
@@ -90,6 +112,12 @@ for message in st.session_state.messages:
 
 if prompt := st.chat_input("Ask a question about your documents..."):
     logger.info(f"User submitted prompt via UI: '{prompt}'")
+
+    # Reset feedback state for the new question before anything else
+    # This must happen here — tied to a new prompt being submitted,
+    # not to a rerun, so the buttons reappear for every new answer
+    st.session_state.feedback_given = False
+    st.session_state.last_prompt = prompt
 
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -106,8 +134,10 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         response_placeholder.markdown(full_response)
         st.caption(f"Response time: {engine.last_query_time}s")
 
+        # Sources already populated from streaming — no second query needed
         sources = engine.last_sources
         st.session_state.last_sources = sources
+        st.session_state.last_response = full_response
 
         if sources:
             with st.expander("Sources"):
@@ -121,16 +151,10 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         logger.info(f"Response delivered | Answer length: {len(full_response)} chars | Query time: {engine.last_query_time}s")
         st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-        # Store everything needed for feedback in session state
-        # so the buttons can access it after Streamlit reruns the script
-        st.session_state.last_prompt = prompt
-        st.session_state.last_response = full_response
-
-config = load_config()
-if config.get("collect_feedback", True) and st.session_state.get("last_prompt"):
-    
-    # Only show buttons if this response hasn't been rated yet
-    if not st.session_state.get("feedback_given"):
+# Feedback buttons — outside the prompt block so they persist across reruns
+# Reads from session state which is always populated after first question
+if config.get("collect_feedback", True) and st.session_state.last_prompt:
+    if not st.session_state.feedback_given:
         st.caption("Was this answer helpful?")
         col1, col2, col3 = st.columns([1, 1, 8])
 
@@ -141,7 +165,7 @@ if config.get("collect_feedback", True) and st.session_state.get("last_prompt"):
                     question=st.session_state.last_prompt,
                     answer=st.session_state.last_response,
                     rating="thumbs_up",
-                    sources=st.session_state.get("last_sources", []),
+                    sources=st.session_state.last_sources,
                     model=engine.llm_model,
                     query_time=engine.last_query_time
                 )
@@ -156,7 +180,7 @@ if config.get("collect_feedback", True) and st.session_state.get("last_prompt"):
                     question=st.session_state.last_prompt,
                     answer=st.session_state.last_response,
                     rating="thumbs_down",
-                    sources=st.session_state.get("last_sources", []),
+                    sources=st.session_state.last_sources,
                     model=engine.llm_model,
                     query_time=engine.last_query_time
                 )
