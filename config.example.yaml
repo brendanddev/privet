@@ -32,3 +32,13 @@ logs_path: ./logs
 # Set to false to disable rating buttons and stop logging feedback
 collect_feedback: true
 feedback_path: ./feedback/feedback.jsonl
+
+# Provider: ollama or llamacpp
+provider: llamacpp
+
+# llama.cpp settings (only used when provider is llamacpp)
+model_path: ./models/YOUR_MODEL_HERE.gguf
+embed_model_path: ./models/YOUR_MODEL_HERE.gguf
+n_gpu_layers: -1
+n_ctx: 4096
+n_threads: null
