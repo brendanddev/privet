@@ -1,5 +1,4 @@
 
-import os
 import numpy as np
 from typing import Generator, List
 from llama_cpp import Llama
@@ -47,6 +46,12 @@ class LlamaCppEmbedding(BaseEmbedding):
     _embed_llm: object = None
 
     def __init__(self, embed_llm):
+        """
+        Store the llama.cpp embedding model via object.__setattr__ to bypass Pydantic.
+
+        Args:
+            embed_llm: A llama-cpp-python Llama instance with embedding=True
+        """
         super().__init__(model_name="nomic-embed-text-llamacpp")
         object.__setattr__(self, '_embed_llm', embed_llm)
 
@@ -61,18 +66,23 @@ class LlamaCppEmbedding(BaseEmbedding):
         return np.array(raw, dtype=np.float16).astype(np.float32).tolist()
 
     def _get_query_embedding(self, query: str) -> List[float]:
+        """Embed a query string."""
         return self._embed(query)
 
     def _get_text_embedding(self, text: str) -> List[float]:
+        """Embed a single text string."""
         return self._embed(text)
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Embed a batch of text strings."""
         return [self._embed(t) for t in texts]
 
     async def _aget_query_embedding(self, query: str) -> List[float]:
+        """Async embed a query string."""
         return self._embed(query)
 
     async def _aget_text_embedding(self, text: str) -> List[float]:
+        """Async embed a single text string."""
         return self._embed(text)
 
 
@@ -94,11 +104,18 @@ class LlamaCppLLM(CustomLLM):
     model_name: str = "llamacpp"
 
     def __init__(self, model):
+        """
+        Store the llama.cpp model via object.__setattr__ to bypass Pydantic.
+
+        Args:
+            model: A llama-cpp-python Llama instance for text generation
+        """
         super().__init__()
         object.__setattr__(self, '_model', model)
 
     @property
     def metadata(self) -> LLMMetadata:
+        """Return LlamaIndex metadata describing this LLM's capabilities."""
         return LLMMetadata(
             context_window=self.context_window,
             num_output=self.num_output,
@@ -107,6 +124,15 @@ class LlamaCppLLM(CustomLLM):
 
     @llm_completion_callback()
     def complete(self, prompt: str, **kwargs) -> CompletionResponse:
+        """
+        Generate a complete response for the given prompt.
+
+        Args:
+            prompt (str): The input prompt
+
+        Returns:
+            CompletionResponse: The generated response
+        """
         response = self._model(
             prompt,
             max_tokens=self.num_output,
@@ -116,6 +142,15 @@ class LlamaCppLLM(CustomLLM):
 
     @llm_completion_callback()
     def stream_complete(self, prompt: str, **kwargs) -> CompletionResponseGen:
+        """
+        Stream a response token by token for the given prompt.
+
+        Args:
+            prompt (str): The input prompt
+
+        Returns:
+            CompletionResponseGen: Generator yielding CompletionResponse tokens
+        """
         def gen():
             full = ""
             for chunk in self._model(
@@ -183,11 +218,38 @@ class LlamaCppProvider(BaseProvider):
         logger.info("llama.cpp provider ready | Generation and embedding models loaded")
 
     def generate(self, prompt: str) -> str:
+        """
+        Generate a complete response via llama.cpp.
+
+        Args:
+            prompt (str): The input prompt
+
+        Returns:
+            str: The generated response text
+        """
         return self.llm.complete(prompt).text
 
     def stream(self, prompt: str) -> Generator[str, None, None]:
+        """
+        Stream a response token by token via llama.cpp.
+
+        Args:
+            prompt (str): The input prompt
+
+        Yields:
+            str: Each token delta as it is generated
+        """
         for chunk in self.llm.stream_complete(prompt):
             yield chunk.delta
 
     def get_embeddings(self, text: str) -> list:
+        """
+        Generate an embedding vector via llama.cpp.
+
+        Args:
+            text (str): The text to embed
+
+        Returns:
+            list: Embedding vector as a list of floats
+        """
         return self.embed_model.get_text_embedding(text)

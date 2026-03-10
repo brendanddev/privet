@@ -11,7 +11,7 @@ models/
 # User feedback
 feedback/
 
-# Virtual envrionment
+# Virtual environment
 venv/
 
 # Docs
@@ -25,6 +25,7 @@ chroma_db/
 
 # Project Context
 CONTEXT.md
+CLAUDE.md
 
 # Others
 __pycache__/

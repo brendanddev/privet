@@ -47,11 +47,38 @@ class OllamaProvider(BaseProvider):
         logger.info(f"OllamaProvider initialized | LLM: {self.llm_model} | Host: {ollama_host}")
 
     def generate(self, prompt: str) -> str:
+        """
+        Generate a complete response via Ollama.
+
+        Args:
+            prompt (str): The input prompt
+
+        Returns:
+            str: The generated response text
+        """
         return str(self.llm.complete(prompt))
 
     def stream(self, prompt: str) -> Generator[str, None, None]:
+        """
+        Stream a response token by token via Ollama.
+
+        Args:
+            prompt (str): The input prompt
+
+        Yields:
+            str: Each token delta as it is generated
+        """
         for token in self.llm.stream_complete(prompt):
             yield token.delta
 
     def get_embeddings(self, text: str) -> list:
+        """
+        Generate an embedding vector via Ollama.
+
+        Args:
+            text (str): The text to embed
+
+        Returns:
+            list: Embedding vector as a list of floats
+        """
         return self.embed_model.get_text_embedding(text)

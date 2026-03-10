@@ -16,6 +16,15 @@ class Float16EmbeddingWrapper(BaseEmbedding):
     _base: BaseEmbedding = None
 
     def __init__(self, base_model: BaseEmbedding):
+        """
+        Wrap an existing embedding model with float16 quantization.
+
+        The base model is stored via object.__setattr__ to bypass Pydantic
+        validation, same pattern used in the llama.cpp wrappers.
+
+        Args:
+            base_model (BaseEmbedding): The underlying embedding model to wrap
+        """
         super().__init__(
             model_name=base_model.model_name,
         )
@@ -37,16 +46,21 @@ class Float16EmbeddingWrapper(BaseEmbedding):
         return np.array(embedding, dtype=np.float16).astype(np.float32).tolist()
 
     def _get_query_embedding(self, query: str) -> List[float]:
+        """Embed a query string with float16 quantization."""
         return self._quantize(self._base._get_query_embedding(query))
 
     def _get_text_embedding(self, text: str) -> List[float]:
+        """Embed a single text string with float16 quantization."""
         return self._quantize(self._base._get_text_embedding(text))
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Embed a batch of text strings with float16 quantization."""
         return [self._quantize(e) for e in self._base._get_text_embeddings(texts)]
 
     async def _aget_query_embedding(self, query: str) -> List[float]:
+        """Async embed a query string with float16 quantization."""
         return self._quantize(await self._base._aget_query_embedding(query))
 
     async def _aget_text_embedding(self, text: str) -> List[float]:
+        """Async embed a single text string with float16 quantization."""
         return self._quantize(await self._base._aget_text_embedding(text))
