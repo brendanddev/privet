@@ -4,9 +4,13 @@ import streamlit as st
 import chromadb
 from core.rag_engine import RAGEngine
 from ui.dashboard import render_sidebar
+from ui.privacy_panel import render_privacy_panel
+from ui.eval_panel import render_eval_panel
 from utils.logger import setup_logger
 from utils.feedback import log_feedback
 from utils.config import load_config
+from utils.network_monitor import NetworkMonitor
+from utils.rag_evaluator import RAGEvaluator
 
 logger = setup_logger()
 
@@ -33,6 +37,24 @@ def get_config():
     return load_config()
 
 
+@st.cache_resource
+def get_evaluator():
+    """
+    Load and cache the RAG evaluator.
+
+    use_nli=True enables DeBERTa NLI faithfulness scoring (~86MB, loads lazily).
+    unload_nli_after_scoring=True frees that RAM immediately after each score call.
+    Set use_nli=False on very constrained setups for embedding-only scoring.
+    """
+    return RAGEvaluator(use_nli=False, unload_nli_after_scoring=True)
+
+
+@st.cache_resource
+def get_monitor():
+    """Load and cache the NetworkMonitor so the session log persists across reruns."""
+    return NetworkMonitor()
+
+
 def get_collection_stats():
     """
     Fetch chunk count and unique document names directly from ChromaDB.
@@ -50,6 +72,8 @@ def get_collection_stats():
 
 engine = load_engine()
 config = get_config()
+monitor = get_monitor()
+evaluator = get_evaluator()
 logger.info("Streamlit app started")
 
 render_sidebar(engine, get_collection_stats)
@@ -104,6 +128,8 @@ if "last_response" not in st.session_state:
     st.session_state.last_response = None
 if "feedback_given" not in st.session_state:
     st.session_state.feedback_given = False
+if "last_eval_result" not in st.session_state:
+    st.session_state.last_eval_result = None
 
 # Render existing chat history
 for message in st.session_state.messages:
@@ -127,9 +153,11 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         response_placeholder = st.empty()
         full_response = ""
 
+        monitor.start_query()
         for token in engine.stream_query(prompt, chat_history=st.session_state.messages):
             full_response += token
             response_placeholder.markdown(full_response + "▌")
+        monitor.end_query()
 
         response_placeholder.markdown(full_response)
         st.caption(f"Response time: {engine.last_query_time}s")
@@ -148,7 +176,23 @@ if prompt := st.chat_input("Ask a question about your documents..."):
                     st.caption(f"_{source['preview']}_")
                     st.divider()
 
-        logger.info(f"Response delivered | Answer length: {len(full_response)} chars | Query time: {engine.last_query_time}s")
+        # Score the response automatically after streaming completes.
+        # Uses embedding-based scoring (always) + NLI faithfulness (if available).
+        # NLI model loads lazily on first query and unloads after scoring to free RAM.
+        eval_result = evaluator.score(
+            question=prompt,
+            answer=full_response,
+            contexts=[s.get("text", s.get("preview", "")) for s in sources],
+            sources=sources,
+            query_time=engine.last_query_time
+        )
+        st.session_state.last_eval_result = eval_result
+
+        logger.info(
+            f"Response delivered | Answer length: {len(full_response)} chars | "
+            f"Query time: {engine.last_query_time}s | "
+            f"Eval composite: {eval_result.composite_score}"
+        )
         st.session_state.messages.append({"role": "assistant", "content": full_response})
 
 # Feedback buttons — outside the prompt block so they persist across reruns
@@ -189,3 +233,9 @@ if config.get("collect_feedback", True) and st.session_state.last_prompt:
                 st.rerun()
     else:
         st.caption("✓ Feedback received")
+
+# Render sidebar panels at the end of the script so they always read state
+# AFTER end_query() and evaluator.score() have been called for the current
+# rerun. Placing them earlier caused them to lag one rerun behind.
+render_privacy_panel(monitor)
+render_eval_panel(evaluator, st.session_state.last_eval_result)

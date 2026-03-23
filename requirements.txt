@@ -23,6 +23,7 @@ dataclasses-json==0.6.7
 defusedxml==0.7.1
 Deprecated==1.2.18
 dirtyjson==1.0.8
+diskcache==5.6.3
 distro==1.9.0
 docx2txt==0.9
 durationpy==0.10
@@ -71,6 +72,7 @@ llama-index-readers-llama-parse==0.5.1
 llama-index-vector-stores-chroma==0.5.5
 llama-index-workflows==2.15.0
 llama-parse==0.6.54
+llama_cpp_python==0.3.16
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 marshmallow==3.26.2
@@ -105,6 +107,7 @@ pluggy==1.6.0
 posthog==5.4.0
 propcache==0.4.1
 protobuf==6.33.5
+psutil==7.2.2
 pyarrow==23.0.1
 pybase64==1.4.3
 pydantic==2.12.5
@@ -126,8 +129,10 @@ requests==2.32.5
 requests-oauthlib==2.0.0
 rich==14.3.3
 rpds-py==0.30.0
+safetensors==0.7.0
 scikit-learn==1.8.0
 scipy==1.17.1
+sentence-transformers==5.3.0
 shellingham==1.5.4
 six==1.17.0
 smmap==5.0.2
@@ -143,8 +148,10 @@ tiktoken==0.12.0
 tinytag==2.2.0
 tokenizers==0.22.2
 toml==0.10.2
+torch==2.10.0
 tornado==6.5.4
 tqdm==4.67.3
+transformers==5.3.0
 typer==0.24.1
 typing-inspect==0.9.0
 typing-inspection==0.4.2
@@ -156,6 +163,7 @@ uvloop==0.22.1
 watchfiles==1.1.1
 websocket-client==1.9.0
 websockets==16.0
+wikipedia==1.4.0
 wrapt==1.17.3
 yarl==1.22.0
 zipp==3.23.0
