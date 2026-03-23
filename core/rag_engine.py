@@ -17,7 +17,7 @@ class RAGEngine:
 
     This class is intentionally decoupled from the UI layer so it can be reused, tested,
     or swapped out independently. The provider abstraction means the engine works with
-    any backend — Ollama, llama.cpp, or future providers — without changes to this class.
+    any backend, Ollama, llama.cpp, or future providers, without changes to this class.
     """
 
     def __init__(self, config_path: str = "config.yaml"):
@@ -46,7 +46,12 @@ class RAGEngine:
         self.logger = setup_logger()
         self.logger.info(f"Initializing RAGEngine | LLM: {self.llm_model} | Embed: {self.embed_model_name}")
 
-        # Load provider from config — ollama or llamacpp
+        # Single ChromaDB client for the lifetime of this engine instance.
+        # All methods share this client.... no more per-operation PersistentClient().
+        self.chroma_client = chromadb.PersistentClient(path=self.chroma_path)
+        self.logger.info(f"ChromaDB client opened | Path: {self.chroma_path}")
+
+        # Load provider from config: llama or llamacpp
         self.provider = get_provider(config)
 
         # Wire provider into LlamaIndex settings
@@ -58,6 +63,83 @@ class RAGEngine:
         self.startup_time = round(time.time() - start, 2)
 
         self.logger.info(f"Engine ready | Startup time: {self.startup_time}s | Chunks indexed: {self._get_chunk_count()}")
+
+    def _get_collection(self) -> chromadb.Collection:
+        """
+        Return the ChromaDB collection, creating it if it does not exist.
+
+        Uses the shared self.chroma_client, never opens a new client.
+
+        Returns:
+            chromadb.Collection: The active document collection
+        """
+        return self.chroma_client.get_or_create_collection(self.collection_name)
+
+    def _get_chunk_count(self) -> int:
+        """
+        Return total number of chunks stored in the collection.
+
+        Returns:
+            int: Total chunk count
+        """
+        return self._get_collection().count()
+
+    def _build_vector_store_and_index(self) -> tuple:
+        """
+        Build a ChromaVectorStore and VectorStoreIndex from the shared client.
+
+        Extracted so add_document, remove_document, and _build_query_engine
+        don't each inline the same three lines.
+
+        Returns:
+            tuple: (ChromaVectorStore, VectorStoreIndex)
+        """
+        collection = self._get_collection()
+        vector_store = ChromaVectorStore(chroma_collection=collection)
+        index = VectorStoreIndex.from_vector_store(vector_store)
+        return vector_store, index
+
+    def _apply_llamacpp_prompt(self):
+        """
+        Apply the custom QA prompt template to both query engines when using llamacpp.
+
+        The prompt prevents raw context chunks from leaking into model responses.
+        Ollama handles prompt formatting internally, so this is only needed for llamacpp.
+
+        Called after every operation that rebuilds the query engines:
+        _build_query_engine, add_document, remove_document, switch_models.
+        """
+        if self.config.get("provider") != "llamacpp":
+            return
+
+        from core.providers.llamacpp import QA_PROMPT
+        self.query_engine.update_prompts(
+            {"response_synthesizer:text_qa_template": QA_PROMPT}
+        )
+        self.streaming_query_engine.update_prompts(
+            {"response_synthesizer:text_qa_template": QA_PROMPT}
+        )
+        self.logger.info("Applied custom QA prompt for llamacpp provider")
+
+    def _build_engines_from_index(self, index: VectorStoreIndex):
+        """
+        Build both query engines from a VectorStoreIndex and apply the llamacpp
+        prompt if needed.
+
+        Replaces the four lines that were copy-pasted into add_document,
+        remove_document, and _build_query_engine.
+
+        Args:
+            index (VectorStoreIndex): The index to build engines from
+        """
+        self.streaming_query_engine = index.as_query_engine(
+            similarity_top_k=self.similarity_top_k,
+            streaming=True
+        )
+        self.query_engine = index.as_query_engine(
+            similarity_top_k=self.similarity_top_k
+        )
+        self._apply_llamacpp_prompt()
 
     def _build_query_engine(self):
         """
@@ -78,12 +160,11 @@ class RAGEngine:
         """
         self.logger.info(f"Building query engine | Docs path: {self.docs_path} | Collection: {self.collection_name}")
 
-        chroma_client = chromadb.PersistentClient(path=self.chroma_path)
-        chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        collection = self._get_collection()
+        vector_store = ChromaVectorStore(chroma_collection=collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-        existing_count = chroma_collection.count()
+        existing_count = collection.count()
 
         if existing_count > 0:
             self.logger.info(f"Existing index found | {existing_count} chunks | Skipping re-indexing")
@@ -117,36 +198,8 @@ class RAGEngine:
                 )
                 self.logger.info("Vector index built and persisted to ChromaDB")
 
-        self.streaming_query_engine = index.as_query_engine(
-            similarity_top_k=self.similarity_top_k,
-            streaming=True
-        )
-        query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
-
-        # Apply custom prompt for llamacpp to prevent raw context leaking into responses
-        # Ollama handles prompt formatting internally so this is only needed for llamacpp
-        if self.config.get("provider") == "llamacpp":
-            from core.providers.llamacpp import QA_PROMPT
-            query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
-            self.streaming_query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
-            self.logger.info("Applied custom QA prompt for llamacpp provider")
-
-        return query_engine
-
-    def _get_chunk_count(self) -> int:
-        """
-        Return total number of chunks stored in the collection.
-
-        Returns:
-            int: Total number of chunks in the ChromaDB collection
-        """
-        client = chromadb.PersistentClient(path=self.chroma_path)
-        collection = client.get_or_create_collection(self.collection_name)
-        return collection.count()
+        self._build_engines_from_index(index)
+        return self.query_engine
 
     def _build_history_context(self, chat_history: list) -> str:
         """
@@ -202,14 +255,14 @@ Answer the current question, taking into account the conversation above if relev
 
     def query(self, question: str, chat_history: list = None) -> dict:
         """
-        Run a question through the RAG pipeline with optional conversation history.
+        Run a question through the RAG pipeline and return a complete response.
 
         Args:
             question (str): The user's question
             chat_history (list): List of dicts with 'role' and 'content' keys
 
         Returns:
-            dict: Contains 'answer' (str), 'sources' (list of dicts), and 'query_time' (float)
+            dict: answer, sources, query_time
         """
         self.logger.info(f"Query received: '{question}'")
 
@@ -226,7 +279,8 @@ Answer the current question, taking into account the conversation above if relev
                 "file": node.metadata.get("file_name", "Unknown"),
                 "page": node.metadata.get("page_label", "Unknown"),
                 "score": round(node.score, 4) if node.score else None,
-                "preview": node.text[:150]
+                "preview": node.text[:150],
+                "text": node.text[:1000]
             })
 
         self.last_sources = sources
@@ -260,7 +314,7 @@ Answer the current question, taking into account the conversation above if relev
 
         start = time.time()
 
-        # Retrieval happens here synchronously — source_nodes are populated
+        # Retrieval happens here synchronously, source_nodes are populated
         # before any tokens are generated
         streaming_response = self.streaming_query_engine.query(contextual_question)
 
@@ -271,7 +325,8 @@ Answer the current question, taking into account the conversation above if relev
                 "file": node.metadata.get("file_name", "Unknown"),
                 "page": node.metadata.get("page_label", "Unknown"),
                 "score": round(node.score, 4) if node.score else None,
-                "preview": node.text[:150]
+                "preview": node.text[:150],
+                "text": node.text[:1000]
             })
 
         self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
@@ -313,37 +368,20 @@ Answer the current question, taking into account the conversation above if relev
         docs = SimpleDirectoryReader(input_files=[file_path]).load_data()
         self.logger.info(f"Loaded {len(docs)} pages from {file_path}")
 
-        chroma_client = chromadb.PersistentClient(path=self.chroma_path)
-        chroma_collection = chroma_client.get_or_create_collection(self.collection_name)
-        chunks_before = chroma_collection.count()
+        collection = self._get_collection()
+        chunks_before = collection.count()
 
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        vector_store = ChromaVectorStore(chroma_collection=collection)
         index = VectorStoreIndex.from_vector_store(vector_store)
 
         for doc in docs:
             index.insert(doc)
 
-        chunks_after = chroma_collection.count()
-        new_chunks = chunks_after - chunks_before
+        new_chunks = collection.count() - chunks_before
 
-        self.query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
-        self.streaming_query_engine = index.as_query_engine(
-            similarity_top_k=self.similarity_top_k,
-            streaming=True
-        )
+        self._build_engines_from_index(index)
 
-        # Reapply custom prompt if using llamacpp
-        if self.config.get("provider") == "llamacpp":
-            from core.providers.llamacpp import QA_PROMPT
-            self.query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
-            self.streaming_query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
-
-        self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {chunks_after}")
+        self.logger.info(f"Document added | New chunks: {new_chunks} | Total chunks: {collection.count()}")
         return new_chunks
 
     def remove_document(self, file_name: str) -> bool:
@@ -358,9 +396,7 @@ Answer the current question, taking into account the conversation above if relev
         """
         self.logger.info(f"Removing document: {file_name}")
 
-        client = chromadb.PersistentClient(path=self.chroma_path)
-        collection = client.get_or_create_collection(self.collection_name)
-
+        collection = self._get_collection()
         results = collection.get(include=["metadatas"])
         ids_to_delete = [
             results["ids"][i]
@@ -375,23 +411,8 @@ Answer the current question, taking into account the conversation above if relev
         collection.delete(ids=ids_to_delete)
         self.logger.info(f"Removed {len(ids_to_delete)} chunks for {file_name}")
 
-        vector_store = ChromaVectorStore(chroma_collection=collection)
-        index = VectorStoreIndex.from_vector_store(vector_store)
-        self.query_engine = index.as_query_engine(similarity_top_k=self.similarity_top_k)
-        self.streaming_query_engine = index.as_query_engine(
-            similarity_top_k=self.similarity_top_k,
-            streaming=True
-        )
-
-        # Reapply custom prompt if using llamacpp
-        if self.config.get("provider") == "llamacpp":
-            from core.providers.llamacpp import QA_PROMPT
-            self.query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
-            self.streaming_query_engine.update_prompts(
-                {"response_synthesizer:text_qa_template": QA_PROMPT}
-            )
+        _, index = self._build_vector_store_and_index()
+        self._build_engines_from_index(index)
 
         return True
 
@@ -421,3 +442,4 @@ Answer the current question, taking into account the conversation above if relev
 
         self.query_engine = self._build_query_engine()
         self.logger.info(f"Model switch complete | LLM: {llm_model} | Embed: {embed_model}")
+
