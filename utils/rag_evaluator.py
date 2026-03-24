@@ -1,3 +1,4 @@
+
 """
 utils/rag_evaluator.py — 
 
@@ -25,6 +26,7 @@ All scores are stored in a local SQLite database for trend tracking.
 Zero network calls are made at any point.
 """
 
+import gc
 import os
 import re
 import sqlite3
@@ -33,6 +35,7 @@ import json
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
+import numpy as np
 from utils.logger import setup_logger
 
 logger = setup_logger()
@@ -231,7 +234,6 @@ class EmbeddingScorer:
 
     def _cosine(self, a, b) -> float:
         """Cosine similarity between two normalized vectors."""
-        import numpy as np
         return float(np.dot(a, b))
 
     def score_answer_relevance(self, question: str, answer: str) -> float:
@@ -377,7 +379,6 @@ class FaithfulnessScorer:
             del self._model
             self._model = None
             self._loaded = False
-            import gc
             gc.collect()
             logger.info("FaithfulnessScorer unloaded to free RAM")
 
@@ -431,7 +432,6 @@ class FaithfulnessScorer:
 
             for i, (claim, score_row) in enumerate(zip(claims, scores)):
                 # Get probability of entailment
-                import numpy as np
                 probs = self._softmax(score_row)
                 # Label order for cross-encoder/nli-deberta-v3-*:
                 # 0=contradiction, 1=entailment, 2=neutral
@@ -460,7 +460,6 @@ class FaithfulnessScorer:
     @staticmethod
     def _softmax(x) -> list:
         """Compute softmax over a list of logits."""
-        import numpy as np
         e = np.exp(x - np.max(x))
         return (e / e.sum()).tolist()
 

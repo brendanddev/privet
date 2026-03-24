@@ -366,7 +366,3 @@ class PrivacyAuditLog:
             f"lines={line_number} | valid={is_valid} | errors={len(errors)}"
         )
         return is_valid, errors
-
-
-    def _hash() -> dict:
-        pass

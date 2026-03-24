@@ -1,3 +1,4 @@
+
 """
 ui/eval_panel.py 
 
@@ -101,9 +102,9 @@ def render_eval_panel(
 
     # --- Summary stats ---
     summary = evaluator.get_summary()
-    if summary and summary.get("total_queries", 0) > 0:
+    if summary and (summary.get("total_queries") or 0) > 0:
         with st.sidebar.expander("📈 Overall stats", expanded=False):
-            total = summary["total_queries"]
+            total = summary.get("total_queries") or 0
             avg = summary.get("avg_composite", 0) or 0
             low = summary.get("low_quality_count", 0) or 0
 

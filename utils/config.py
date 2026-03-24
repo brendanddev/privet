@@ -20,18 +20,29 @@ def load_config(config_path: str = "config.yaml") -> dict:
         dict: Configuration values
     """
     defaults = {
+        "provider": "ollama",
         "llm_model": "gemma3:1b",
         "embed_model": "nomic-embed-text",
         "ollama_host": "http://localhost:11434",
         "request_timeout": 120.0,
         "chunk_size": 256,
         "chunk_overlap": 25,
-        "similarity_top_k": 3,
+        "similarity_top_k": 5,
         "history_length": 6,
         "docs_path": "./docs",
         "chroma_path": "./chroma_db",
         "collection_name": "documents",
-        "logs_path": "./logs"
+        "logs_path": "./logs",
+        "collect_feedback": True,
+        "feedback_path": "./feedback/feedback.jsonl",
+        "model_path": "./models/google_gemma-3-1b-it-Q4_K_M.gguf",
+        "embed_model_path": "./models/nomic-embed-text-v1.5.Q8_0.gguf",
+        "n_gpu_layers": -1,
+        "n_ctx": 4096,
+        "n_threads": None,
+        "privacy_audit_path": "./logs/privacy_audit.jsonl",
+        "show_hardware_panel": True,
+        "use_hybrid_search": False,
     }
 
     if not os.path.exists(config_path):

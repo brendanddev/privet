@@ -3,6 +3,7 @@ import os
 import streamlit as st
 import plotly.graph_objects as go
 from core.rag_debugger import RAGDebugger
+from utils.config import load_config
 from utils.logger import setup_logger
 
 logger = setup_logger()
@@ -10,8 +11,16 @@ logger = setup_logger()
 
 @st.cache_resource
 def load_debugger():
-    """Load and cache the RAGDebugger instance so it connects to ChromaDB once."""
-    return RAGDebugger()
+    """Load and cache the RAGDebugger instance so it connects to ChromaDB once.
+
+    Reads chroma_path and collection_name from config so custom values
+    are respected instead of using RAGDebugger's hardcoded defaults.
+    """
+    config = load_config()
+    return RAGDebugger(
+        chroma_path=config.get("chroma_path", "./chroma_db"),
+        collection_name=config.get("collection_name", "documents"),
+    )
 
 
 def render_chunk_distribution(debugger: RAGDebugger):
@@ -169,7 +178,7 @@ def render_retrieval_confidence(sources):
             color = "inverse"
 
         st.caption(f"[{i+1}] {source['file']} — Page {source['page']} — {label} ({score})")
-        st.progress(min(float(score), 1.0))
+        st.progress(max(0.0, min(float(score), 1.0)))
 
 
 def render_sidebar(engine, get_collection_stats, audit_log=None):

@@ -1,7 +1,6 @@
 
 import os
 import streamlit as st
-import chromadb
 from core.rag_engine import RAGEngine
 from ui.dashboard import render_sidebar
 from ui.privacy_panel import render_privacy_panel
@@ -72,15 +71,23 @@ def get_hardware_profile():
     return HardwareProfiler().profile()
 
 
-def get_collection_stats():
+def get_collection_stats(engine):
     """
-    Fetch chunk count and unique document names directly from ChromaDB.
+    Fetch chunk count and unique document names from the engine's shared ChromaDB client.
+
+    Uses engine.chroma_client directly so no new client is opened per rerun.
+    Reads collection_name from config so custom names are respected.
+
+    Args:
+        engine (RAGEngine): The active RAG engine instance
 
     Returns:
         tuple: (total_chunks int, unique_files set)
     """
-    client = chromadb.PersistentClient(path="./chroma_db")
-    collection = client.get_or_create_collection("documents")
+    config = get_config()
+    collection = engine.chroma_client.get_or_create_collection(
+        config.get("collection_name", "documents")
+    )
     results = collection.get(include=["metadatas"])
     total_chunks = collection.count()
     unique_files = set(m.get("file_name", "unknown") for m in results["metadatas"])
@@ -103,10 +110,12 @@ if "audit_session_started" not in st.session_state:
     )
     st.session_state.audit_session_started = True
 
-render_sidebar(engine, get_collection_stats, audit_log)
+render_sidebar(engine, lambda: get_collection_stats(engine), audit_log)
 
 st.title("Local Document Assistant")
-st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
+provider = config.get("provider", "ollama")
+backend = "llama.cpp" if provider == "llamacpp" else "Ollama"
+st.caption(f"Powered by {backend} + LlamaIndex + ChromaDB")
 
 st.success("Fully local — no data leaves your machine. No cloud, no API calls, no tracking.")
 
@@ -196,6 +205,7 @@ if prompt := st.chat_input("Ask a question about your documents..."):
 
         # Sources already populated from streaming — no second query needed
         sources = engine.last_sources
+        logger.info(f"Source sample: {sources[0] if sources else 'none'}")
         st.session_state.last_sources = sources
         st.session_state.last_response = full_response
 
@@ -203,7 +213,7 @@ if prompt := st.chat_input("Ask a question about your documents..."):
             with st.expander("Sources"):
                 for i, source in enumerate(sources):
                     st.markdown(f"**[{i+1}] {source['file']} — Page {source['page']}**")
-                    if source["score"]:
+                    if source["score"] is not None:
                         st.caption(f"Relevance score: {source['score']}")
                     st.caption(f"_{source['preview']}_")
                     st.divider()

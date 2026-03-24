@@ -373,7 +373,6 @@ class HardwareProfiler:
             displays = data.get("SPDisplaysDataType", [])
             if displays:
                 gpu_name = displays[0].get("sppci_model", "Apple GPU")
-                vram_str = displays[0].get("spdisplays_vram", "")
                 # Apple Silicon has unified memory so VRAM isn't separately reported
                 return GPUInfo(
                     backend="metal",

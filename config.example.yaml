@@ -37,11 +37,16 @@ collect_feedback: true
 feedback_path: ./feedback/feedback.jsonl
 
 # Provider: ollama or llamacpp
-provider: llamacpp
+# Default is ollama — works out of the box after `ollama pull gemma3:1b`
+# Switch to llamacpp if you want fully offline inference without Ollama running
+provider: ollama
 
 # llama.cpp settings (only used when provider is llamacpp)
-model_path: ./models/YOUR_MODEL_HERE.gguf
-embed_model_path: ./models/YOUR_MODEL_HERE.gguf
+# Download from Hugging Face:
+#   LLM:    bartowski/google_gemma-3-1b-it-GGUF  (google_gemma-3-1b-it-Q4_K_M.gguf)
+#   Embed:  nomic-ai/nomic-embed-text-v1.5-GGUF  (nomic-embed-text-v1.5.Q8_0.gguf)
+model_path: ./models/google_gemma-3-1b-it-Q4_K_M.gguf
+embed_model_path: ./models/nomic-embed-text-v1.5.Q8_0.gguf
 n_gpu_layers: -1
 n_ctx: 4096
 n_threads: null
