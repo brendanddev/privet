@@ -172,7 +172,7 @@ def render_retrieval_confidence(sources):
         st.progress(min(float(score), 1.0))
 
 
-def render_sidebar(engine, get_collection_stats):
+def render_sidebar(engine, get_collection_stats, audit_log=None):
     """
     Render the full debug sidebar panel.
 
@@ -182,6 +182,7 @@ def render_sidebar(engine, get_collection_stats):
     Args:
         engine (RAGEngine): The active RAG engine instance
         get_collection_stats (callable): Returns total chunk count and unique filenames
+        audit_log: PrivacyAuditLog instance, or None to skip audit logging
     """
     debugger = load_debugger()
 
@@ -226,6 +227,12 @@ def render_sidebar(engine, get_collection_stats):
                                 file_path = os.path.join("docs", f)
                                 if os.path.exists(file_path):
                                     os.remove(file_path)
+                                if audit_log is not None:
+                                    audit_log.log_document_access(
+                                        filename=f,
+                                        action="REMOVED",
+                                        chunk_count=0
+                                    )
                                 st.success(f"Removed {f}")
                                 logger.info(f"Document removed via UI: {f}")
                                 st.rerun()
@@ -252,20 +259,27 @@ def render_model_switcher(engine):
     """
     Render model selection dropdowns for LLM and embedding model.
 
-    Lists all models currently pulled in Ollama and allows switching both the LLM and embedding model 
-    without restarting the app.
+    Lists all models currently pulled in Ollama and allows switching both the LLM and embedding model
+    without restarting the app. Only available when provider is ollama.
 
     Switching models reinitializes the engine settings but does not affect the existing ChromaDB index.
 
     Args:
         engine (RAGEngine): The active RAG engine instance
     """
-    import ollama
+    from utils.config import load_config
 
     st.subheader("Model Switcher")
     st.caption("Switch models without restarting. Changes apply immediately.")
 
     try:
+        provider = load_config().get("provider", "ollama")
+        if provider != "ollama":
+            st.caption("Model switcher only available for Ollama provider.")
+            return
+
+        import ollama
+
         # Get all models pulled in Ollama
         models = ollama.list()
         model_names = [m.model for m in models.models]

@@ -62,7 +62,7 @@ class HardwareProfile:
     # Recommendations (config overrides for this tier)
     recommended_n_ctx: int = 4096
     recommended_chunk_size: int = 256
-    recommended_top_k: int = 3
+    recommended_top_k: int = 5
     recommended_llm_model: str = "gemma3:1b"
     recommended_embed_model: str = "nomic-embed-text"
     recommended_n_gpu_layers: int = -1
