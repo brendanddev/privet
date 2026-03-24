@@ -6,11 +6,13 @@ from core.rag_engine import RAGEngine
 from ui.dashboard import render_sidebar
 from ui.privacy_panel import render_privacy_panel
 from ui.eval_panel import render_eval_panel
+from ui.hardware_panel import render_hardware_panel
 from utils.logger import setup_logger
 from utils.feedback import log_feedback
 from utils.config import load_config
 from utils.network_monitor import NetworkMonitor
 from utils.rag_evaluator import RAGEvaluator
+from utils.privacy_audit_log import PrivacyAuditLog
 
 logger = setup_logger()
 
@@ -55,6 +57,21 @@ def get_monitor():
     return NetworkMonitor()
 
 
+@st.cache_resource
+def get_audit_log():
+    """Load and cache the PrivacyAuditLog for the session."""
+    config = get_config()
+    path = config.get("privacy_audit_path", "./logs/privacy_audit.jsonl")
+    return PrivacyAuditLog(path)
+
+
+@st.cache_resource
+def get_hardware_profile():
+    """Detect and cache hardware profile once at startup."""
+    from utils.hardware import HardwareProfiler
+    return HardwareProfiler().profile()
+
+
 def get_collection_stats():
     """
     Fetch chunk count and unique document names directly from ChromaDB.
@@ -74,9 +91,19 @@ engine = load_engine()
 config = get_config()
 monitor = get_monitor()
 evaluator = get_evaluator()
+audit_log = get_audit_log()
 logger.info("Streamlit app started")
 
-render_sidebar(engine, get_collection_stats)
+if "audit_session_started" not in st.session_state:
+    audit_log.log_session_start(
+        provider=config.get("provider", "ollama"),
+        model_name=engine.llm_model,
+        docs_count=engine.get_stats().get("docs_count", 0),
+        ollama_host=config.get("ollama_host", "N/A")
+    )
+    st.session_state.audit_session_started = True
+
+render_sidebar(engine, get_collection_stats, audit_log)
 
 st.title("Local Document Assistant")
 st.caption("Powered by Ollama + LlamaIndex + ChromaDB")
@@ -112,6 +139,11 @@ with st.expander("Upload a document"):
             with st.spinner(f"Indexing {uploaded_file.name}..."):
                 new_chunks = engine.add_document(save_path)
 
+            audit_log.log_document_access(
+                filename=uploaded_file.name,
+                action="INDEXED",
+                chunk_count=new_chunks
+            )
             st.success(f"{uploaded_file.name} added — {new_chunks} new chunks indexed")
             logger.info(f"File uploaded via UI: {uploaded_file.name} | Chunks added: {new_chunks}")
 
@@ -188,6 +220,16 @@ if prompt := st.chat_input("Ask a question about your documents..."):
         )
         st.session_state.last_eval_result = eval_result
 
+        last_net = monitor.session_log[-1] if monitor.session_log else None
+        audit_log.log_query(
+            query=prompt,
+            sources=sources,
+            response_length=len(full_response),
+            query_time_ms=engine.last_query_time * 1000,
+            network_bytes=last_net.bytes_sent if last_net else 0,
+            verified_private=last_net.verified_private if last_net else True
+        )
+
         logger.info(
             f"Response delivered | Answer length: {len(full_response)} chars | "
             f"Query time: {engine.last_query_time}s | "
@@ -239,3 +281,4 @@ if config.get("collect_feedback", True) and st.session_state.last_prompt:
 # rerun. Placing them earlier caused them to lag one rerun behind.
 render_privacy_panel(monitor)
 render_eval_panel(evaluator, st.session_state.last_eval_result)
+render_hardware_panel(get_hardware_profile())

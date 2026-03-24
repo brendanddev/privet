@@ -27,6 +27,9 @@ chroma_db/
 CONTEXT.md
 CLAUDE.md
 
+# Plans
+PLANS.md
+
 # Others
 __pycache__/
 *.pyc

@@ -1,42 +1,52 @@
 
-# Local RAG Assistant
+# Privet
 
-A fully local, private document assistant powered by Ollama, LlamaIndex, and ChromaDB. Ask questions about your documents... nothing leaves your machine.
+A fully local, private document assistant. Ask questions about your documents, nothing leaves your machine, and you can prove it.
 
 ---
 
 ## Philosophy
 
-Most AI document tools send your data to the cloud. This project is built around three core principles:
+Most AI document tools send your data to the cloud. Privet is built around three principles that can't be compromised:
 
-**Privacy first.** Every part of the pipeline runs on your machine. Your documents, your embeddings, your queries — none of it is transmitted to any external server. No OpenAI, no cloud APIs, no tracking.
+**Privacy first.** Every component runs locally. Your documents, embeddings, and queries never touch an external server. No OpenAI, no cloud APIs, no tracking. A built-in cryptographic audit log records every query session and proves — with a tamper-evident hash chain — that zero data left your machine.
 
-**Hardware optimized.** Built to run efficiently on consumer hardware with limited RAM. The goal is maximum performance from minimum resources — smaller indexes, quantized models, efficient retrieval.
+**Hardware optimized.** Built for consumer hardware with limited RAM. Privet auto-detects your hardware tier at setup and configures itself accordingly — from 4GB machines to 16GB+ workstations. Maximum performance from minimum resources.
 
-**Ease of use.** A local AI tool should be as simple to use as any cloud alternative. No technical setup beyond the initial install, no command line required to use it day to day.
+**Ease of use.** A local AI tool should be as simple as any cloud alternative. One setup command, no command line required day to day, no technical knowledge needed to use it.
+
+---
+
+## What Makes Privet Different
+
+Every other local RAG tool says "your data is private." Privet proves it.
+
+- **Cryptographic audit log** — every query session is logged with SHA-256 hash chaining. If any entry is tampered with after the fact, verification fails. Run `python3 -m utils.verify_audit_log` at any time to produce a signed report showing zero external bytes across all sessions.
+- **Network monitor** — live sidebar panel measures external interface bytes before and after every query. Distinguishes real outbound traffic from OS background noise (mDNS, Bonjour).
+- **Hardware auto-configuration** — detects RAM, CPU, and GPU (Metal/CUDA/ROCm) at install time and writes a tuned `config.yaml` automatically. Four hardware tiers with different model and context settings.
+- **Automatic quality evaluation** — every answer is scored for faithfulness, relevance, context precision, and source coverage using local embedding models. Results stored in SQLite for trend tracking.
 
 ---
 
 ## Features
 
-- **Fully local pipeline** — every component runs on your machine, no external API calls
-- **Provider abstraction** — swap between Ollama and llama.cpp via a single config value, no code changes required
-- **llama.cpp support** — run GGUF models directly with no background service, no open ports, direct Metal acceleration on Apple Silicon
-- **Multi-format document ingestion** — supports PDF, TXT, DOCX, and CSV via folder drop or direct UI upload
-- **Persistent index** — documents are only embedded once, startup is near-instant on subsequent runs
-- **Document management** — add and remove documents through the UI, index stays in sync
-- **Streaming responses** — answers stream token by token for immediate feedback
-- **Source citations** — every answer includes the source document and page number it was pulled from
-- **Relevance scoring** — see how confident the retrieval was for each source chunk
-- **Conversation memory** — the model remembers previous exchanges in the same session
-- **Feedback system** — rate answers with thumbs up or down, feedback logged locally for future analysis and fine-tuning
-- **Model switcher** — swap LLM and embedding models from the sidebar without restarting, provider-aware
-- **Float16 embedding quantization** — embeddings stored at half precision, 2x memory reduction with negligible quality loss
-- **Chunk size tuning** — documents split at 256 tokens for precise retrieval
-- **Debug sidebar** — live panel with engine stats, chunk distribution chart, index health indicators, and retrieval confidence meters
-- **Structured logging** — all engine activity written to daily log files in `logs/`
-- **RAG Debugger** — standalone inspection tool to analyze chunks, embeddings, similarity scores, and trace queries
-- **Docker support** — run the entire stack with a single command, no manual setup required
+- **Fully local pipeline** — every component runs on your machine, zero external API calls
+- **Provider abstraction** — swap between Ollama and llama.cpp via a single config value
+- **llama.cpp support** — run GGUF models directly, no background service, no open ports, Metal acceleration on Apple Silicon
+- **Multi-format ingestion** — PDF, TXT, DOCX, CSV via folder drop or UI upload
+- **Persistent index** — documents embedded once, near-instant startup on subsequent runs
+- **Streaming responses** — answers stream token by token
+- **Source citations** — every answer shows source document, page number, and relevance score
+- **Conversation memory** — model remembers previous exchanges within a session
+- **Feedback system** — thumbs up/down logged locally for future fine-tuning
+- **Privacy audit log** — tamper-evident JSONL log with SHA-256 hash chaining
+- **Audit verification CLI** — `python3 -m utils.verify_audit_log` produces a printable privacy report
+- **Network monitor** — live per-query external byte measurement with noise filtering
+- **Hardware profiler** — auto-detects tier and GPU backend, generates tuned config at install
+- **RAG evaluator** — automatic scoring on faithfulness, relevance, context precision, source coverage
+- **Debug sidebar** — chunk distribution chart, index health, retrieval confidence meters
+- **Model switcher** — swap models from the sidebar without restarting (Ollama provider)
+- **Docker support** — full stack with a single command
 
 ---
 
@@ -44,11 +54,12 @@ Most AI document tools send your data to the cloud. This project is built around
 
 | Component | Library | Purpose |
 |---|---|---|
-| LLM (Ollama) | Ollama | Runs language models locally via HTTP |
-| LLM (llama.cpp) | llama-cpp-python | Runs GGUF models directly, no service required |
+| LLM (Ollama) | Ollama | Local language models via HTTP |
+| LLM (llama.cpp) | llama-cpp-python | GGUF models directly, no service required |
 | RAG Framework | LlamaIndex 0.14.15 | Document ingestion and retrieval |
 | Vector Store | ChromaDB 1.5.2 | Local embedding storage |
 | UI | Streamlit 1.54.0 | Browser-based chat interface |
+| Evaluation | sentence-transformers | Local answer quality scoring |
 | Containers | Docker + Compose | Single command deployment |
 
 ---
@@ -63,127 +74,167 @@ Most AI document tools send your data to the cloud. This project is built around
 - **LLM:** `google_gemma-3-1b-it-Q4_K_M.gguf` — quantized Gemma 3 1B, ~800MB
 - **Embeddings:** `nomic-embed-text-v1.5.Q8_0.gguf` — quantized nomic embed, ~274MB
 
-Both GGUF models available from [Hugging Face](https://huggingface.co). Place them in the `models/` folder.
+Both GGUF models available from [Hugging Face](https://huggingface.co). Place them in `models/`.
+
+---
+
+## Hardware Tiers
+
+Privet auto-detects your hardware at setup and configures itself accordingly.
+
+| Tier | RAM | n_ctx | Model |
+|---|---|---|---|
+| High | 16GB+ | 8192 | gemma3:4b recommended |
+| Standard | 8-15GB | 4096 | gemma3:1b Q4_K_M |
+| Low | 4-7GB | 1024 | gemma3:1b Q4_K_S, embed unloads after indexing |
+| Minimal | <4GB | 512 | CPU only, conservative settings |
+
+To re-run hardware detection after setup:
+```bash
+python3 -m utils.hardware
+```
 
 ---
 
 ## Setup
 
-### Option 1 — Docker (recommended)
+### Option 1 — Automated (recommended)
 
-The easiest way to run the app. No Python setup required.
 ```bash
-git clone https://github.com/brendanddev/local-rag-assistant.git
-cd local-rag-assistant
-docker compose up --build
+git clone https://github.com/brendanddev/privet.git
+cd privet
+bash setup.sh
 ```
 
-Then open your browser to `http://localhost:8501`
+The setup script will:
+1. Check system dependencies (Python 3.11+, Ollama if needed)
+2. Ask which provider to use: Ollama or llama.cpp
+3. Create a virtual environment and install dependencies
+4. Run hardware detection and auto-generate a tuned `config.yaml`
+5. Pull Ollama models or print llama.cpp download instructions
 
-On first run Docker will pull the Ollama image and download the required models automatically. This takes a few minutes. Every run after is fast.
-
-**GPU support:**
-- **Linux + NVIDIA:** Works automatically
-- **Mac:** Ollama uses Apple Metal automatically, no extra config needed. Remove the `deploy` block from `docker-compose.yml`
-- **Windows:** Requires WSL2 with NVIDIA drivers
-
-**To stop:**
+Then start the app:
 ```bash
-docker compose down
-```
-
-**To stop and remove all data including downloaded models:**
-```bash
-docker compose down -v
-```
-
----
-
-### Option 2 — Manual Setup
-
-**Prerequisites:**
-- [Ollama](https://ollama.com) installed and running
-- Python 3.11+
-
-**Install:**
-```bash
-git clone https://github.com/brendanddev/local-rag-assistant.git
-cd local-rag-assistant
-python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-```
-
-**Pull required models:**
-```bash
-ollama pull gemma3:1b
-ollama pull nomic-embed-text
-```
-
-**Add your documents:**
-Drop any supported file (PDF, TXT, DOCX, CSV) into the `docs/` folder, or upload directly through the UI.
-
-**Run:**
-```bash
-# Terminal 1 — start Ollama
-ollama serve
-
-# Terminal 2 — start the app
 streamlit run app.py
 ```
 
-Then open your browser to `http://localhost:8501`
+Open `http://localhost:8501`
 
-**Run the debugger:**
+---
+
+### Option 2 — Docker
+
 ```bash
-python3 core/rag_debugger.py
+git clone https://github.com/brendanddev/privet.git
+cd privet
+docker compose up --build
+```
+
+Open `http://localhost:8501`
+
+**GPU support:**
+- **Linux + NVIDIA:** Works automatically
+- **Mac:** Metal used automatically. Remove the `deploy` block from `docker-compose.yml`
+- **Windows:** Requires WSL2 with NVIDIA drivers
+
+---
+
+### Option 3 — Manual
+
+**Prerequisites:** Python 3.11+, Ollama installed and running
+
+```bash
+git clone https://github.com/brendanddev/privet.git
+cd privet
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+ollama pull gemma3:1b
+ollama pull nomic-embed-text
+cp config.example.yaml config.yaml
+```
+
+Start:
+```bash
+ollama serve          # terminal 1
+streamlit run app.py  # terminal 2
 ```
 
 ---
 
-## Feedback System
+## Verifying Privacy
 
-Every answer can be rated with a thumbs up or down. Ratings are stored locally in `feedback/feedback.jsonl` — one JSON entry per rating including the question, answer, sources retrieved, model used, and query time.
+Run at any time to verify the audit log integrity and see a session summary:
 
-This data is used to identify patterns in answer quality and will serve as training data for future fine-tuning.
+```bash
+python3 -m utils.verify_audit_log
+```
 
-To disable feedback collection set `collect_feedback: false` in `config.yaml`.
+Output:
+```
+╔══════════════════════════════════════╗
+║   PRIVET — PRIVACY AUDIT REPORT      ║
+╚══════════════════════════════════════╝
+  Chain integrity:  VALID
+  Period:           2026-01-01  to  2026-03-23
+  Total queries:    412
+  External bytes:   0
+  Data left device: NO
+  Verification:     ALL ENTRIES VALID
+```
+
+The report is also saved to `logs/privacy_report_{date}.txt`.
+
+---
+
+## Feedback and Fine-tuning
+
+Every answer can be rated thumbs up or down. Ratings are stored in `feedback/feedback.jsonl`, one JSON entry per rating with the question, answer, sources, model, and query time.
+
+This data is the foundation for future fine-tuning — a feedback-driven LoRA training pipeline that produces a model shaped entirely by your own usage, stored locally, owned by you.
+
+To disable: set `collect_feedback: false` in `config.yaml`.
 
 ---
 
 ## Project Structure
+
 ```
-local-rag-assistant/
+privet/
 ├── core/
-│   ├── rag_engine.py           # RAG pipeline logic
-│   ├── rag_debugger.py         # Inspection and debugging tools
-│   ├── embeddings.py           # Float16 embedding quantization wrapper
+│   ├── rag_engine.py           # RAG pipeline
+│   ├── rag_debugger.py         # Standalone inspection CLI
+│   ├── embeddings.py           # Float16 embedding wrapper
 │   └── providers/
 │       ├── base.py             # Abstract provider interface
-│       ├── ollama.py           # Ollama provider implementation
-│       ├── llamacpp.py         # llama.cpp provider implementation
-│       └── factory.py          # Provider selection logic
+│       ├── ollama.py           # Ollama provider
+│       ├── llamacpp.py         # llama.cpp provider
+│       └── factory.py          # Provider selection
 ├── ui/
-│   └── dashboard.py            # Sidebar debug panel
+│   ├── dashboard.py            # Debug sidebar
+│   ├── privacy_panel.py        # Network monitor panel
+│   ├── eval_panel.py           # Quality scores panel
+│   └── hardware_panel.py       # Hardware stats panel
 ├── utils/
-│   ├── logger.py               # Logging configuration
 │   ├── config.py               # YAML config loader
-│   └── feedback.py             # Feedback logging utility
-├── app.py                      # Streamlit UI entry point
-├── config.yaml                 # Runtime configuration (gitignored)
-├── config.example.yaml         # Configuration template
-├── Dockerfile                  # App container definition
-├── docker-compose.yml          # Multi-container orchestration
-├── entrypoint.sh               # Container startup script
-├── models/                     # GGUF model files (gitignored)
-├── docs/                       # Drop your documents here
+│   ├── logger.py               # Daily log files
+│   ├── feedback.py             # Feedback logging
+│   ├── hardware.py             # Hardware profiler
+│   ├── network_monitor.py      # External byte monitoring
+│   ├── rag_evaluator.py        # Automatic answer scoring
+│   ├── privacy_audit_log.py    # Hash-chained audit log
+│   └── verify_audit_log.py     # Audit verification CLI
+├── app.py                      # Streamlit entry point
+├── setup.sh                    # One-command installer
+├── config.example.yaml         # Config template
+├── Dockerfile
+├── docker-compose.yml
+├── models/                     # GGUF files (gitignored)
+├── docs/                       # Your documents go here
 ├── chroma_db/                  # Vector store (auto-generated)
-├── logs/                       # Daily log files (auto-generated)
-├── feedback/                   # Feedback data (auto-generated, gitignored)
-├── BENCHMARKS.md               # Performance data and optimization history
-├── requirements.txt
-├── .gitignore
-└── README.md
+├── logs/                       # Logs + audit log + eval DB
+└── feedback/                   # Feedback data (gitignored)
 ```
 
 ---
@@ -195,13 +246,10 @@ local-rag-assistant/
 | v1.0.0 | Initial release — Docker, float16 quantization, persistent index |
 | v1.1.0 | Conversation memory |
 | v1.2.0 | Streaming responses |
-| v1.3.0 | llama.cpp provider — direct GGUF loading, Metal acceleration, provider abstraction |
+| v1.3.0 | llama.cpp provider, provider abstraction, feedback system |
 
 ---
 
 ## Benchmarks
 
-See [BENCHMARKS.md](BENCHMARKS.md) for full performance data and optimization history.
-
----
-
+See [BENCHMARKS.md](BENCHMARKS.md) for performance data across hardware tiers.
