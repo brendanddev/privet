@@ -1,4 +1,3 @@
-
 # Performance Benchmarks
 
 All benchmarks run on a MacBook Air M-series, 8GB RAM unless otherwise noted.
@@ -160,3 +159,157 @@ The speed improvement comes from eliminating the HTTP layer. With Ollama every q
 The tradeoff is memory. With Ollama the model lives in Ollama's process and is shared across any app that talks to it. With llama.cpp the model lives inside the Python process, consuming RAM that would otherwise be available to the OS and other apps. On 8GB unified memory this is measurable but acceptable — the app uses roughly 1GB more RAM with llama.cpp loaded.
 
 ---
+
+## Current Baseline — gemma3:1b llamacpp, 448 chunks, 20 questions
+*Date: 2026-03-29 | Hardware: MacBook Air M2, 8GB unified memory, Apple Silicon*
+
+### Setup
+| Parameter | Value |
+|---|---|
+| Provider | llamacpp (direct Metal acceleration) |
+| LLM | google_gemma-3-1b-it-Q4_K_M.gguf |
+| Embeddings | nomic-embed-text-v1.5.Q8_0.gguf |
+| Chunks indexed | 448 |
+| Documents | 24 |
+| similarity_top_k | 5 |
+| Evaluator | embedding-based (all-MiniLM-L6-v2), NLI disabled |
+
+### Query Results
+| # | Question | Time | Composite | Faithfulness | Relevance | Rating |
+|---|---|---|---|---|---|---|
+| 1 | What is a pointer? | 3.27s | 0.863 | 1.000 | 0.799 | GOOD |
+| 2 | What is a linked list? | 3.32s | 0.632 | 0.500 | 0.883 | GOOD |
+| 3 | What is the call stack? | 2.00s | 0.900 | 1.000 | 0.860 | GOOD |
+| 4 | What is virtual memory? | 2.25s | 0.909 | 1.000 | 0.898 | GOOD |
+| 5 | What is tokenization? | 2.11s | 0.884 | 1.000 | 0.847 | BAD |
+| 6 | How does memory management differ between Java and C? | 1.84s | 0.864 | 1.000 | 0.826 | GOOD |
+| 7 | What is the relationship between word embeddings and vector space models? | 2.12s | 0.887 | 1.000 | 0.841 | BAD |
+| 8 | How does the attention mechanism relate to transformer architecture? | 2.08s | 0.766 | 1.000 | 0.511 | BAD |
+| 9 | What is the difference between a stack and a linked list? | 2.24s | 0.870 | 1.000 | 0.858 | BAD |
+| 10 | How does garbage collection relate to memory management? | 2.20s | 0.892 | 1.000 | 0.858 | GOOD |
+| 11 | Why would you use a linked list instead of a stack? | 1.88s | 0.149 | 0.000 | 0.113 | BAD |
+| 12 | What happens to a pointer when its memory is freed? | 1.80s | 0.841 | 1.000 | 0.763 | BAD |
+| 13 | How does tokenization affect word embeddings? | 2.30s | 0.870 | 1.000 | 0.821 | GOOD |
+| 14 | Why does Java not have pointers like C does? | 2.43s | 0.876 | 1.000 | 0.878 | GOOD |
+| 15 | What is the relationship between cosine similarity and vector embeddings? | 2.05s | 0.600 | 0.500 | 0.727 | GOOD |
+| 16 | How does the transformer attention mechanism use vector embeddings? | 2.27s | 0.874 | 1.000 | 0.877 | GOOD |
+| 17 | How does polymorphism relate to inheritance in OOP? | 2.11s | 0.877 | 1.000 | 0.805 | BAD |
+| 18 | What role does the call stack play in memory management? | 2.17s | 0.907 | 1.000 | 0.889 | GOOD |
+| 19 | How does word2vec produce vector embeddings? | 2.10s | 0.863 | 1.000 | 0.794 | GOOD |
+| 20 | How does virtual memory relate to memory addresses? | 2.58s | 0.887 | 1.000 | 0.805 | GOOD |
+
+### Summary
+| Metric | Value |
+|---|---|
+| Avg query time | 2.24s |
+| Min query time | 1.80s |
+| Max query time | 3.32s |
+| Avg composite score | 0.813 |
+| Avg faithfulness | 0.950 |
+| Avg relevance | 0.789 |
+| Thumbs up rate | 60% (12/20) |
+| Questions scored >0.85 composite | 13/20 (65%) |
+| Questions scored <0.50 composite | 1/20 (5%) |
+
+### Analysis
+
+**Strengths:** Faithfulness is high at 0.950 — when the model answers from retrieved context it stays grounded. Simple definition questions and cross-document factual questions perform consistently well. Six questions scored above 0.90 composite.
+
+**Failure cases:**
+
+Q11 ("Why would you use a linked list instead of a stack?") is the single biggest failure — composite 0.149, faithfulness 0.000. This is an inference question where the answer requires reasoning across two documents rather than finding a direct statement. The model answered from general knowledge rather than the retrieved context. This category of question is the primary weakness of the current pure vector search pipeline.
+
+Q8 ("How does the attention mechanism relate to transformer architecture?") retrieved the correct document but scored relevance 0.511 — the answer was superficial despite good source retrieval. Likely a chunking issue where the relevant explanation was split across chunk boundaries.
+
+Q2 and Q15 both show faithfulness 0.500, indicating partial grounding — the model supplemented retrieved content with general knowledge rather than staying strictly within the documents.
+
+**Comparison to v1.3.0:**
+
+Thumbs up rate dropped from 75% (v1.3.0, 15 questions) to 60% (20 questions). This is expected — the v1.3.0 question set was weighted toward simple definitions where the model performs best. This question set deliberately includes harder inference and multi-hop questions that expose real failure modes.
+
+Average query time is unchanged at 2.24s, consistent with v1.3.0 Ollama baseline. This confirms the llamacpp speed advantage (37% faster than Ollama) is maintained at 448 chunks.
+
+**This data serves as the baseline for Pleias-RAG-1B comparison.**
+The same 20 questions will be run against Pleias-RAG-1B to measure whether a RAG-specific model improves composite scores, faithfulness, and thumbs up rate on this question set, particularly on the inference and multi-hop categories where gemma3:1b struggles.
+
+---
+
+## Hybrid Search — BM25 + Vector + RRF vs Pure Vector Baseline
+*Date: 2026-03-29 | Hardware: MacBook Air M2, 8GB unified memory, Apple Silicon*
+
+Same 20 questions run against hybrid search (BM25 + vector + Reciprocal Rank Fusion) to measure improvement over the pure vector baseline above.
+
+### Setup
+| Parameter | Value |
+|---|---|
+| Provider | llamacpp (direct Metal acceleration) |
+| LLM | google_gemma-3-1b-it-Q4_K_M.gguf |
+| Embeddings | nomic-embed-text-v1.5.Q8_0.gguf |
+| Chunks indexed | 448 |
+| Documents | 24 |
+| similarity_top_k | 5 |
+| Retrieval mode | BM25 + vector + RRF (QueryFusionRetriever, num_queries=1) |
+| Evaluator | embedding-based (all-MiniLM-L6-v2), NLI disabled |
+
+### Query Results
+| # | Question | Time | Composite | Faithfulness | Relevance | Rating | vs Baseline |
+|---|---|---|---|---|---|---|---|
+| 1 | What is a pointer? | 5.76s | 0.872 | 1.000 | 0.820 | GOOD | +0.009 |
+| 2 | What is a linked list? | 5.73s | 0.882 | 1.000 | 0.882 | GOOD | +0.250 |
+| 3 | What is the call stack? | 4.20s | 0.905 | 1.000 | 0.869 | GOOD | +0.005 |
+| 4 | What is virtual memory? | 4.45s | 0.902 | 1.000 | 0.855 | GOOD | −0.007 |
+| 5 | What is tokenization? | 4.82s | 0.861 | 1.000 | 0.778 | GOOD | +0.023 |
+| 6 | How does memory management differ between Java and C? | 3.88s | 0.870 | 1.000 | 0.863 | GOOD | +0.006 |
+| 7 | What is the relationship between word embeddings and vector space models? | 4.25s | 0.894 | 1.000 | 0.887 | GOOD | +0.007 |
+| 8 | How does the attention mechanism relate to transformer architecture? | 4.54s | 0.634 | 0.500 | 0.895 | GOOD | −0.132 |
+| 9 | What is the difference between a stack and a linked list? | 5.58s | 0.848 | 1.000 | 0.784 | BAD | −0.022 |
+| 10 | How does garbage collection relate to memory management? | 4.52s | 0.897 | 1.000 | 0.854 | GOOD | +0.005 |
+| 11 | Why would you use a linked list instead of a stack? | 4.51s | 0.608 | 0.500 | 0.814 | BAD | +0.459 |
+| 12 | What happens to a pointer when its memory is freed? | 4.50s | 0.759 | 1.000 | 0.479 | BAD | −0.082 |
+| 13 | How does tokenization affect word embeddings? | 4.55s | 0.891 | 1.000 | 0.876 | GOOD | +0.021 |
+| 14 | Why does Java not have pointers like C does? | 5.30s | 0.736 | 0.750 | 0.803 | GOOD | −0.140 |
+| 15 | What is the relationship between cosine similarity and vector embeddings? | 6.38s | 0.757 | 0.875 | 0.641 | GOOD | +0.157 |
+| 16 | How does the transformer attention mechanism use vector embeddings? | 4.37s | 0.875 | 1.000 | 0.865 | BAD | +0.001 |
+| 17 | How does polymorphism relate to inheritance in OOP? | 4.21s | 0.835 | 1.000 | 0.743 | BAD | −0.042 |
+| 18 | What role does the call stack play in memory management? | 3.88s | 0.818 | 1.000 | 0.733 | BAD | −0.089 |
+| 19 | How does word2vec produce vector embeddings? | 4.23s | 0.612 | 0.500 | 0.821 | GOOD | −0.251 |
+| 20 | How does virtual memory relate to memory addresses? | 4.32s | 0.903 | 1.000 | 0.862 | GOOD | +0.016 |
+
+### Summary
+| Metric | Hybrid (BM25+Vector+RRF) | Pure Vector Baseline | Difference |
+|---|---|---|---|
+| Avg query time | 4.62s | 2.24s | **+2.38s slower** |
+| Min query time | 3.88s | 1.80s | |
+| Max query time | 6.38s | 3.32s | |
+| Avg composite score | 0.798 | 0.813 | −0.015 |
+| Avg faithfulness | 0.881 | 0.950 | −0.069 |
+| Avg relevance | 0.809 | 0.789 | +0.020 |
+| Thumbs up rate | 55% (11/20) | 60% (12/20) | −5% |
+| Questions scored >0.85 composite | 12/20 (60%) | 13/20 (65%) | −5% |
+| Questions scored <0.50 composite | 0/20 (0%) | 1/20 (5%) | eliminated worst failure |
+
+### Analysis
+
+**Speed cost:** Hybrid search is 106% slower on average (2.24s → 4.62s). BM25 adds overhead on every query — it must score all 448 chunks against the query at retrieval time. This is the most significant regression and is a hard tradeoff for a latency-sensitive use case.
+
+**Where hybrid helped:**
+
+Q11 ("Why would you use a linked list instead of a stack?") — the biggest baseline failure at composite 0.149 — improved to 0.608 (+0.459). This was the primary motivation for hybrid search: BM25 keyword matching surfaces both "linked list" and "stack" documents even when vector similarity is weak on inference questions. The improvement is real but the question is still not well answered, indicating the issue is generation quality not just retrieval.
+
+Q2 (linked list, +0.250) and Q15 (cosine similarity, +0.157) also improved meaningfully. Both are questions where keyword overlap between the query and document text is strong, which is where BM25 adds the most value.
+
+The worst failure (composite <0.50) was eliminated entirely — 1/20 in baseline vs 0/20 with hybrid.
+
+**Where hybrid hurt:**
+
+Q19 (word2vec, −0.251) and Q14 (Java no pointers, −0.140) dropped the most. These are cases where RRF is likely surfacing BM25 keyword matches that dilute better vector results — the fused ranking pulls in chunks that are keyword-adjacent but semantically weaker than what pure vector search would have retrieved.
+
+Q8 (attention + transformer) dropped from faithfulness 1.000 to 0.500 despite relevance improving. The model received more chunks but stayed less grounded — possibly because the fused result set mixed high-relevance vector chunks with lower-quality BM25 matches, diluting the context quality.
+
+**Verdict:**
+
+Hybrid search helps the worst failures but hurts mid-tier questions and doubles query time. The net composite score and thumbs up rate are both lower than the pure vector baseline. At 448 chunks with gemma3:1b, the speed penalty is not justified by quality gains. 
+
+The pattern suggests hybrid search may become more valuable at larger document sets (1000+ chunks) where pure vector search degrades more severely and BM25's keyword precision provides a stronger signal. Re-evaluate after document set expands significantly.
+
+**Pure vector search restored as default.** `use_hybrid_search: false` in config.yaml.

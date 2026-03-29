@@ -49,3 +49,7 @@ embed_model_path: ./models/nomic-embed-text-v1.5.Q8_0.gguf
 n_gpu_layers: -1
 n_ctx: 4096
 n_threads: null
+
+# Hybrid search: BM25 + vector retrieval combined with Reciprocal Rank Fusion
+# Set to false to use pure vector search (faster, slightly lower recall)
+use_hybrid_search: false

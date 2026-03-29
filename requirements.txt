@@ -115,6 +115,8 @@ pydantic_core==2.41.5
 pydeck==0.9.1
 Pygments==2.19.2
 pypdf==6.7.4
+rank_bm25==0.2.2
+llama-index-retrievers-bm25==0.7.1
 PyPika==0.51.1
 pyproject_hooks==1.2.0
 pytest==9.0.2

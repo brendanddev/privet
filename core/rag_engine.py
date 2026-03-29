@@ -126,19 +126,52 @@ class RAGEngine:
         Build both query engines from a VectorStoreIndex and apply the llamacpp
         prompt if needed.
 
-        Replaces the four lines that were copy-pasted into add_document,
-        remove_document, and _build_query_engine.
+        When use_hybrid_search is true in config, combines BM25 and vector
+        retrieval via Reciprocal Rank Fusion using QueryFusionRetriever.
+        When false, falls back to pure vector search (original behaviour).
 
         Args:
             index (VectorStoreIndex): The index to build engines from
         """
-        self.streaming_query_engine = index.as_query_engine(
-            similarity_top_k=self.similarity_top_k,
-            streaming=True
-        )
-        self.query_engine = index.as_query_engine(
-            similarity_top_k=self.similarity_top_k
-        )
+        if self.config.get("use_hybrid_search"):
+            from llama_index.retrievers.bm25 import BM25Retriever
+            from llama_index.core.retrievers import QueryFusionRetriever
+            from llama_index.core.query_engine import RetrieverQueryEngine
+
+            vector_retriever = index.as_retriever(similarity_top_k=10)
+            collection = self._get_collection()
+            results = collection.get(include=["documents", "metadatas"])
+            from llama_index.core.schema import TextNode
+            nodes = [
+                TextNode(text=doc, metadata=meta)
+                for doc, meta in zip(results["documents"], results["metadatas"])
+            ]
+            bm25_retriever = BM25Retriever.from_defaults(
+                nodes=nodes, similarity_top_k=10
+            )
+            retriever = QueryFusionRetriever(
+                retrievers=[vector_retriever, bm25_retriever],
+                similarity_top_k=self.similarity_top_k,
+                num_queries=1,
+                mode="reciprocal_rerank"
+            )
+            self.streaming_query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever, streaming=True
+            )
+            self.query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever
+            )
+            self.logger.info("Retrieval mode: hybrid (BM25 + vector + RRF)")
+        else:
+            self.streaming_query_engine = index.as_query_engine(
+                similarity_top_k=self.similarity_top_k,
+                streaming=True
+            )
+            self.query_engine = index.as_query_engine(
+                similarity_top_k=self.similarity_top_k
+            )
+            self.logger.info("Retrieval mode: vector only")
+
         self._apply_llamacpp_prompt()
 
     def _build_query_engine(self):
