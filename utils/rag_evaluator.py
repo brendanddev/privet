@@ -1,27 +1,10 @@
-
 """
-utils/rag_evaluator.py — 
-
+utils/rag_evaluator.py
 
 An automatic local RAG evaluation system.
 
 Scores every answer across four metrics without any external API calls:
-  1. Faithfulness       does the answer stay within the retrieved context?
-  2. Answer Relevance   does the answer actually address the question?
-  3. Context Precision  how much of the retrieved context was useful?
-  4. Source Coverage    did the answer use the sources that were retrieved?
-
-Architecture decision: two evaluation tiers are used based on 8GB RAM budget.
-
-  Tier 1 — Embedding-based (always runs, ~80MB RAM, <50ms per query)
-      Uses nomic-embed-text (already loaded for RAG) via cosine similarity.
-      Handles: answer relevance, context precision, source coverage.
-
-  Tier 2 — NLI-based (optional, runs async after response, ~180MB RAM)
-      Uses cross-encoder/nli-deberta-v3-small (86MB) for entailment scoring.
-      Handles: faithfulness (claim-by-claim entailment checking).
-      Loaded lazily, only when first needed, unloaded after scoring if RAM is tight.
-
+Faithfulness, answer relevance, context percision, source coverage.
 All scores are stored in a local SQLite database for trend tracking.
 Zero network calls are made at any point.
 """

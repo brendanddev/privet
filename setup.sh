@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# -----------------------------------------------------------------------------
 # =============================================================================
-# -----------------------------------------------------------------------------
 # setup.sh - Local RAG Assistant installer
 #
 # Supports macOS (primary) and Linux.
@@ -23,10 +21,7 @@
 #   6. Prints llama.cpp model download instructions (if llamacpp chosen)
 #   7. Creates required directories
 #   8. Prints a start command
-# -----------------------------------------------------------------------------
 # =============================================================================
-# -----------------------------------------------------------------------------
-
 
 set -euo pipefail
 
@@ -256,7 +251,7 @@ similarity_top_k: $REC_TOP_K
 history_length: 6
 
 # Paths
-docs_path: ./docs
+docs_path: ./documents
 chroma_path: ./chroma_db
 collection_name: documents
 logs_path: ./logs
@@ -283,8 +278,8 @@ fi
 ### Step 5 — Create required directories
 header "Step 5 — Creating directories"
 
-mkdir -p docs chroma_db logs feedback models
-success "Directories ready: docs/ chroma_db/ logs/ feedback/ models/"
+mkdir -p documents chroma_db logs feedback models
+success "Directories ready: documents/ chroma_db/ logs/ feedback/ models/"
 
 ### Step 6 — Provider-specific setup
 header "Step 6 — Provider setup"
@@ -378,5 +373,5 @@ echo ""
 echo -e "  ${BOLD}To run the debugger:${RESET}"
 echo "    source venv/bin/activate && python3 -m core.rag_debugger"
 echo ""
-echo -e "  Drop documents into ${BOLD}docs/${RESET} or upload via the app UI."
+echo -e "  Drop documents into ${BOLD}documents/${RESET} or upload via the app UI."
 echo ""

@@ -231,7 +231,7 @@ privet/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── models/                     # GGUF files (gitignored)
-├── docs/                       # Your documents go here
+├── documents/                  # Your documents go here
 ├── chroma_db/                  # Vector store (auto-generated)
 ├── logs/                       # Logs + audit log + eval DB
 └── feedback/                   # Feedback data (gitignored)
@@ -253,3 +253,8 @@ privet/
 ## Benchmarks
 
 See [BENCHMARKS.md](BENCHMARKS.md) for performance data across hardware tiers.
+
+---
+
+## Support 
+

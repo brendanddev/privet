@@ -1,3 +1,8 @@
+"""
+utils/logger
+
+Handles logging within privet.
+"""
 
 import logging
 import os

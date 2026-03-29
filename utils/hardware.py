@@ -1,4 +1,3 @@
-
 """
 utils/hardware.py 
 

@@ -1,16 +1,8 @@
-
 """
 utils/verify_audit_log.py
 
 Standalone CLI tool for verifying and summarising a privacy audit log
 produced by PrivacyAuditLog.
-
-Usage:
-    python3 -m utils.verify_audit_log
-    python3 -m utils.verify_audit_log path/to/privacy_audit.jsonl
-
-Exits with code 0 if the chain is valid, 1 if any integrity errors are found.
-The report is printed to stdout and written to logs/privacy_report_<date>.txt.
 """
 
 import json

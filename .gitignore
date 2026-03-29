@@ -1,37 +1,41 @@
 
-# Logs
+### Logs
 logs/
 
-# Configuration
+### Configuration
 config.yaml
 
-# Models
+### Models
 models/
 
-# User feedback
+### User feedback
 feedback/
 
-# Virtual environment
+### Virtual environment
 venv/
 
-# Docs
-docs/
+### User docs
+documents/
 
-# ChromaDB local database
+### ChromaDB local database
 chroma_db/
 
-# Environment variables
+### Environment variables
 .env
 
-# Project Context
+### Notes
+NOTES.md
+
+### Project Context
 CONTEXT.md
 CLAUDE.md
 
-# Plans
+### Plans
 PLANS.md
 
-# Others
+### Others
 __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+

@@ -253,6 +253,57 @@ Current question: {question}
 
 Answer the current question, taking into account the conversation above if relevant."""
 
+    def _enrich_scores_from_chroma(self, question: str, sources: list) -> None:
+        """
+        Inject real cosine similarity scores into source dicts by querying ChromaDB directly.
+
+        LlamaIndex's ChromaVectorStore does not populate NodeWithScore.score in this
+        version (0.14.15), so all scores come back as 0.0. This method re-queries
+        ChromaDB with the same embedding to get actual cosine distances, converts
+        them to similarity scores (score = 1 - distance), and writes them back into
+        the source dicts in place.
+
+        Matching is done by file_name from metadata because ChromaDB result ordering
+        is not guaranteed to align with LlamaIndex source_nodes ordering.
+
+        Falls back silently — existing 0.0 scores are preserved on any error so the
+        query result is never degraded.
+
+        Args:
+            question (str): The raw user question to embed
+            sources (list): Source dicts built from source_nodes — mutated in place
+        """
+        if not sources:
+            return
+
+        try:
+            query_embedding = self.provider.get_embeddings(question)
+            collection = self._get_collection()
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=self.similarity_top_k,
+                include=["distances", "metadatas"]
+            )
+
+            # Build a lookup from file_name.. best distance (lowest = most similar)
+            # A file can appear in multiple chunks so keep the minimum distance.
+            distance_by_file = {}
+            for dist, meta in zip(results["distances"][0], results["metadatas"][0]):
+                fname = meta.get("file_name", "")
+                if fname not in distance_by_file or dist < distance_by_file[fname]:
+                    distance_by_file[fname] = dist
+
+            for source in sources:
+                fname = source.get("file", "")
+                if fname in distance_by_file:
+                    raw = 1 / (1 + distance_by_file[fname])
+                    source["score"] = round(max(0.0, min(1.0, raw)), 4)
+
+            self.logger.info("Scores enriched from ChromaDB distances")
+
+        except Exception as e:
+            self.logger.warning(f"Score enrichment from ChromaDB failed — using 0.0 fallback: {e}")
+
     def query(self, question: str, chat_history: list = None) -> dict:
         """
         Run a question through the RAG pipeline and return a complete response.
@@ -278,11 +329,12 @@ Answer the current question, taking into account the conversation above if relev
             sources.append({
                 "file": node.metadata.get("file_name", "Unknown"),
                 "page": node.metadata.get("page_label", "Unknown"),
-                "score": round(node.score, 4) if node.score else None,
+                "score": round(node.score, 4) if node.score is not None else 0.0,
                 "preview": node.text[:150],
                 "text": node.text[:1000]
             })
 
+        self._enrich_scores_from_chroma(question, sources)
         self.last_sources = sources
         self.logger.info(f"Query completed | Time: {self.last_query_time}s | Sources retrieved: {len(sources)}")
 
@@ -324,11 +376,12 @@ Answer the current question, taking into account the conversation above if relev
             self.last_sources.append({
                 "file": node.metadata.get("file_name", "Unknown"),
                 "page": node.metadata.get("page_label", "Unknown"),
-                "score": round(node.score, 4) if node.score else None,
+                "score": round(node.score, 4) if node.score is not None else 0.0,
                 "preview": node.text[:150],
                 "text": node.text[:1000]
             })
 
+        self._enrich_scores_from_chroma(question, self.last_sources)
         self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
 
         for token in streaming_response.response_gen:
@@ -349,6 +402,7 @@ Answer the current question, taking into account the conversation above if relev
             "last_query_time": self.last_query_time,
             "llm_model": self.llm_model,
             "embed_model": self.embed_model_name,
+            "docs_count": self._get_chunk_count(),
         }
 
     def add_document(self, file_path: str) -> int:

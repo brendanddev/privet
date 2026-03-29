@@ -1,4 +1,3 @@
-
 """
 utils/privacy_audit_log.py
 
