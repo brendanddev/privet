@@ -81,6 +81,29 @@ success "Provider selected: $PROVIDER"
 ### Step 2 — System dependencies
 header "Step 2 — Checking system dependencies"
 
+# Disk space — require 2 GB free, warn below 4 GB for Ollama
+MIN_FREE_KB=2097152   # 2 GB hard minimum
+WARN_FREE_KB=4194304  # 4 GB recommended (Ollama models ~1.5 GB)
+FREE_KB=$(df -Pk . | awk 'NR==2 {print $4}')
+if [ "$FREE_KB" -lt "$MIN_FREE_KB" ]; then
+    error "Not enough disk space. Need at least 2 GB free — only $(( FREE_KB / 1024 )) MB available."
+fi
+if [ "$PROVIDER" = "ollama" ] && [ "$FREE_KB" -lt "$WARN_FREE_KB" ]; then
+    warn "Ollama models require ~1.5 GB. Only $(( FREE_KB / 1024 )) MB free — may run out of space."
+fi
+success "Disk space OK: $(( FREE_KB / 1024 )) MB free"
+
+# curl (Linux only — macOS ships with curl)
+if [ "$OS" = "Linux" ]; then
+    if ! command -v curl &>/dev/null; then
+        info "curl not found — installing..."
+        sudo apt-get update -qq && sudo apt-get install -y curl
+        success "curl installed"
+    else
+        success "curl found: $(curl --version | head -1)"
+    fi
+fi
+
 # Homebrew (macOS only)
 if [ "$OS" = "Darwin" ]; then
     if ! command -v brew &>/dev/null; then
@@ -125,6 +148,17 @@ fi
 
 success "Python found: $($PYTHON --version)"
 
+# python3-venv (Linux only — not installed by default on Debian/Ubuntu)
+if [ "$OS" = "Linux" ]; then
+    if ! "$PYTHON" -m venv --help &>/dev/null; then
+        info "python3-venv not found — installing..."
+        PY_VER=$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        sudo apt-get install -y "python${PY_VER}-venv" 2>/dev/null || \
+            sudo apt-get install -y python3-venv
+        success "python3-venv installed"
+    fi
+fi
+
 # Ollama (only if Ollama provider chosen)
 if [ "$PROVIDER" = "ollama" ]; then
     if ! command -v ollama &>/dev/null; then
@@ -160,7 +194,18 @@ success "Virtual environment activated"
 
 info "Installing Python dependencies (this may take a few minutes)..."
 pip install --upgrade pip --quiet
-pip install -r requirements.txt --quiet
+
+# Use uv for fast dependency installs if available; fall back to pip
+if ! command -v uv &>/dev/null; then
+    info "Installing uv for faster package installation..."
+    pip install uv --quiet
+fi
+
+if command -v uv &>/dev/null; then
+    uv pip install -r requirements.txt --quiet
+else
+    pip install -r requirements.txt --quiet
+fi
 success "Dependencies installed"
 
 ### Step 4 — Hardware detection + config generation

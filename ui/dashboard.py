@@ -90,7 +90,7 @@ def render_index_health(debugger: RAGDebugger):
     Checks three things:
     - Tiny chunks: under 200 chars are usually noise that hurts retrieval quality
     - Oversized chunks: over 1000 chars give the model too much unfocused context
-    - Average chunk size: overall indicator of chunking quality
+    - Average chunk size: compared against chunk_size * 4 (approx chars per token)
 
     Args:
         debugger (RAGDebugger): Active debugger instance connected to ChromaDB
@@ -106,8 +106,12 @@ def render_index_health(debugger: RAGDebugger):
         st.warning("No chunks found in the index.")
         return
 
+    config = load_config()
+    chunk_size = config.get("chunk_size", 256)
+    avg_char_threshold = chunk_size * 4
+
     tiny = sum(1 for l in lengths if l < 200)
-    oversized = sum(1 for l in lengths if l > 1000)
+    oversized = sum(1 for l in lengths if l > avg_char_threshold)
     avg = int(sum(lengths) / total)
 
     tiny_pct = (tiny / total) * 100
@@ -126,8 +130,8 @@ def render_index_health(debugger: RAGDebugger):
 
     if avg < 200:
         st.error(f"Avg chunk size: {avg} chars — too small overall.")
-    elif avg > 1200:
-        st.warning(f"Avg chunk size: {avg} chars — consider tuning chunk size down.")
+    elif avg > avg_char_threshold:
+        st.warning(f"Avg chunk size: {avg} chars — consider tuning chunk size down (threshold: {avg_char_threshold} chars for chunk_size={chunk_size}).")
     else:
         st.success(f"Avg chunk size: {avg} chars — within ideal range.")
 

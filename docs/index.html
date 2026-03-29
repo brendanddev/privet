@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privet - Answers from your documents. Nothing else.</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', serif;
+            background: #0f0f0f;
+            color: #e8e8e8;
+            min-height: 100vh;
+        }
+
+        nav {
+            padding: 24px 48px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #1e1e1e;
+        }
+
+        nav .logo {
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            color: #fff;
+        }
+
+        nav a {
+            color: #888;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-family: 'Courier New', monospace;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
+        .hero {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 120px 48px 80px;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 400;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            color: #fff;
+            letter-spacing: -0.02em;
+        }
+
+        .hero h1 span {
+            color: #4ade80;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: #888;
+            line-height: 1.7;
+            margin-bottom: 48px;
+            max-width: 540px;
+        }
+
+        .install {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .install code {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #4ade80;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            color: #888;
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #3a3a3a;
+            color: #fff;
+        }
+
+        .install-note {
+            font-size: 0.85rem;
+            color: #555;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 48px;
+        }
+
+        .github-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            border: 1px solid #2a2a2a;
+            color: #888;
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+
+        .github-btn:hover {
+            border-color: #4ade80;
+            color: #4ade80;
+        }
+
+        .divider {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 48px;
+            border-top: 1px solid #1e1e1e;
+        }
+
+        .features {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 80px 48px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 48px;
+        }
+
+        .feature h3 {
+            font-size: 0.85rem;
+            font-family: 'Courier New', monospace;
+            color: #4ade80;
+            margin-bottom: 12px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .feature p {
+            font-size: 0.95rem;
+            color: #666;
+            line-height: 1.7;
+        }
+
+        .proof {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 48px 80px;
+        }
+
+        .proof-box {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 32px;
+        }
+
+        .proof-box h3 {
+            font-size: 0.85rem;
+            font-family: 'Courier New', monospace;
+            color: #4ade80;
+            margin-bottom: 16px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .proof-box pre {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: #888;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+
+        .proof-box pre .highlight {
+            color: #4ade80;
+        }
+
+        .footer {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 32px 48px;
+            border-top: 1px solid #1e1e1e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer p {
+            font-size: 0.85rem;
+            color: #444;
+            font-family: 'Courier New', monospace;
+        }
+
+        .footer a {
+            color: #444;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            color: #888;
+        }
+
+        @media (max-width: 640px) {
+            .hero {
+                padding: 80px 24px 60px;
+            }
+
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+                padding: 60px 24px;
+                gap: 32px;
+            }
+
+            .proof {
+                padding: 0 24px 60px;
+            }
+
+            .footer {
+                padding: 24px;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            nav {
+                padding: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <span class="logo">Privet</span>
+        <a href="https://github.com/brendanddev/privet">GitHub →</a>
+    </nav>
+
+    <section class="hero">
+        <h1>Answers from your documents.<br><span>Nothing else.</span></h1>
+        <p>
+            Chat with your notes, PDFs, and files using AI that runs entirely
+            on your laptop. No cloud. No subscriptions. No data leaving your machine —
+            and you can prove it.
+        </p>
+
+        <div class="install">
+            <code
+                id="install-cmd">curl -fsSL https://raw.githubusercontent.com/brendanddev/privet/main/setup.sh | bash</code>
+            <button class="copy-btn" onclick="copyInstall()">copy</button>
+        </div>
+        <p class="install-note">macOS and Linux - Python 3.11+ required</p>
+
+        <a href="https://github.com/brendanddev/privet" class="github-btn">
+            View on GitHub
+        </a>
+    </section>
+
+    <div class="divider"></div>
+
+    <section class="features">
+        <div class="feature">
+            <h3>Provably private</h3>
+            <p>Every query session is logged with a SHA-256 hash chain. Run one command to verify zero bytes left your
+                machine.</p>
+        </div>
+        <div class="feature">
+            <h3>Runs on your hardware</h3>
+            <p>Auto-detects your RAM and GPU at setup. Configures itself for your machine. Works on 8GB RAM with no GPU
+                required.</p>
+        </div>
+        <div class="feature">
+            <h3>Your documents only</h3>
+            <p>Every answer comes from files you uploaded. Not the internet. Not training data. Just what you chose to
+                include.</p>
+        </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <section class="proof">
+        <div class="proof-box">
+            <h3>Privacy verification</h3>
+            <pre>
+$ python3 -m utils.verify_audit_log
+
+<span class="highlight">Chain integrity:  VALID</span>
+Period:           2026-01-01  to  2026-03-29
+Total queries:    124
+External bytes:   0
+<span class="highlight">Data left device: NO</span>
+Verification:     ALL ENTRIES VALID
+            </pre>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <p>Privet — open source, MIT license</p>
+        <p><a href="https://github.com/brendanddev/privet">github.com/brendanddev/privet</a></p>
+    </footer>
+
+    <script>
+        function copyInstall() {
+            const cmd = document.getElementById('install-cmd').textContent;
+            navigator.clipboard.writeText(cmd).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                btn.textContent = 'copied';
+                setTimeout(() => btn.textContent = 'copy', 2000);
+            });
+        }
+    </script>
+
+</body>
+
+</html>
