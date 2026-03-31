@@ -27,5 +27,8 @@ def get_provider(config: dict) -> BaseProvider:
     elif provider_name == "llamacpp":
         from core.providers.llamacpp import LlamaCppProvider
         return LlamaCppProvider(config)
+    elif provider_name == "pleias":
+        from core.providers.pleias import PleiasProvider
+        return PleiasProvider(config)
     else:
-        raise ValueError(f"Unknown provider: {provider_name}. Choose 'ollama' or 'llamacpp'.")
+        raise ValueError(f"Unknown provider: {provider_name}. Choose 'ollama', 'llamacpp', or 'pleias'.")

@@ -1,19 +1,24 @@
-
 # Privet
 
-A fully local, private document assistant. Ask questions about your documents, nothing leaves your machine, and you can prove it.
+Your notes stay on your laptop. Ask questions about them. Nothing leaves your machine — and you can prove it.
+
+---
+
+## The Problem
+
+Every AI study tool sends your data to the cloud. Your lecture notes, assignments, research papers — uploaded to servers you don't control, processed by companies whose privacy policies change. ChatGPT has no memory of what you uploaded last week. Every session starts from zero.
+
+Privet runs entirely on your machine. Your documents never leave. And unlike every other local AI tool that just *says* your data is private, Privet *proves* it — with a cryptographic audit log you can verify yourself.
 
 ---
 
 ## Philosophy
 
-Most AI document tools send your data to the cloud. Privet is built around three principles that can't be compromised:
+**Privacy first.** Every component runs locally. Your documents, embeddings, and queries never touch an external server. No OpenAI, no cloud APIs, no tracking. A built-in SHA-256 hash-chained audit log records every query session and produces a signed report proving zero data left your machine.
 
-**Privacy first.** Every component runs locally. Your documents, embeddings, and queries never touch an external server. No OpenAI, no cloud APIs, no tracking. A built-in cryptographic audit log records every query session and proves — with a tamper-evident hash chain — that zero data left your machine.
+**Hardware optimized.** Built for consumer hardware with limited RAM. Privet auto-detects your hardware tier at setup and configures itself accordingly — from 4GB machines to 16GB+ workstations. Runs on the laptop you already own.
 
-**Hardware optimized.** Built for consumer hardware with limited RAM. Privet auto-detects your hardware tier at setup and configures itself accordingly — from 4GB machines to 16GB+ workstations. Maximum performance from minimum resources.
-
-**Ease of use.** A local AI tool should be as simple as any cloud alternative. One setup command, no command line required day to day, no technical knowledge needed to use it.
+**Ease of use.** One setup command. No command line required day to day. Drop documents in a folder, ask questions, get answers with source citations.
 
 ---
 
@@ -21,10 +26,27 @@ Most AI document tools send your data to the cloud. Privet is built around three
 
 Every other local RAG tool says "your data is private." Privet proves it.
 
-- **Cryptographic audit log** — every query session is logged with SHA-256 hash chaining. If any entry is tampered with after the fact, verification fails. Run `python3 -m utils.verify_audit_log` at any time to produce a signed report showing zero external bytes across all sessions.
+- **Cryptographic audit log** — every query session is logged with SHA-256 hash chaining. Tamper with any entry and verification fails. Run `python3 -m utils.verify_audit_log` at any time to produce a signed report showing zero external bytes across all sessions.
 - **Network monitor** — live sidebar panel measures external interface bytes before and after every query. Distinguishes real outbound traffic from OS background noise (mDNS, Bonjour).
-- **Hardware auto-configuration** — detects RAM, CPU, and GPU (Metal/CUDA/ROCm) at install time and writes a tuned `config.yaml` automatically. Four hardware tiers with different model and context settings.
-- **Automatic quality evaluation** — every answer is scored for faithfulness, relevance, context precision, and source coverage using local embedding models. Results stored in SQLite for trend tracking.
+- **Hardware auto-configuration** — detects RAM, CPU, and GPU (Metal/CUDA/ROCm) at setup and writes a tuned `config.yaml` automatically. Four hardware tiers.
+- **Cross-encoder reranking** — retrieves 10 candidates, re-scores top 5 with a local cross-encoder model. Meaningfully improves answer quality over pure vector search — benchmarked, not claimed.
+- **Automatic quality evaluation** — every answer is scored for faithfulness and relevance using local embedding models. Results tracked over time.
+
+---
+
+## Benchmarks
+
+All benchmarks run on MacBook Air M2, 8GB unified memory, Apple Silicon. Same 20 questions across all configurations.
+
+| Setup | Avg Time | Composite | Faithfulness | Thumbs Up |
+|---|---|---|---|---|
+| gemma3:1b · vector only | 2.24s | 0.813 | 0.950 | 60% |
+| gemma3:1b · hybrid (BM25 + vector + RRF) | 4.62s | 0.798 | 0.881 | 55% |
+| gemma3:1b · vector + rerank | 3.06s | 0.864 | 1.000 | — |
+
+Vector + cross-encoder reranking is the current default. Faithfulness hits 1.000 — every answer fully grounded in retrieved context.
+
+See [BENCHMARKS.md](BENCHMARKS.md) for full per-question results and analysis.
 
 ---
 
@@ -33,6 +55,7 @@ Every other local RAG tool says "your data is private." Privet proves it.
 - **Fully local pipeline** — every component runs on your machine, zero external API calls
 - **Provider abstraction** — swap between Ollama and llama.cpp via a single config value
 - **llama.cpp support** — run GGUF models directly, no background service, no open ports, Metal acceleration on Apple Silicon
+- **Cross-encoder reranking** — retrieve 10 candidates, rerank to top 5 with ms-marco-MiniLM-L-6-v2
 - **Multi-format ingestion** — PDF, TXT, DOCX, CSV via folder drop or UI upload
 - **Persistent index** — documents embedded once, near-instant startup on subsequent runs
 - **Streaming responses** — answers stream token by token
@@ -42,10 +65,10 @@ Every other local RAG tool says "your data is private." Privet proves it.
 - **Privacy audit log** — tamper-evident JSONL log with SHA-256 hash chaining
 - **Audit verification CLI** — `python3 -m utils.verify_audit_log` produces a printable privacy report
 - **Network monitor** — live per-query external byte measurement with noise filtering
-- **Hardware profiler** — auto-detects tier and GPU backend, generates tuned config at install
-- **RAG evaluator** — automatic scoring on faithfulness, relevance, context precision, source coverage
-- **Debug sidebar** — chunk distribution chart, index health, retrieval confidence meters
-- **Model switcher** — swap models from the sidebar without restarting (Ollama provider)
+- **Hardware profiler** — auto-detects tier and GPU backend, generates tuned config at setup
+- **RAG evaluator** — automatic scoring on faithfulness and relevance, tracked over time
+- **Model quantization pipeline** — `python3 -m utils.quantize` converts and quantizes any HuggingFace model to GGUF with SHA-256 provenance record
+- **Debug sidebar** — chunk distribution, index health, retrieval confidence meters
 - **Docker support** — full stack with a single command
 
 ---
@@ -58,6 +81,7 @@ Every other local RAG tool says "your data is private." Privet proves it.
 | LLM (llama.cpp) | llama-cpp-python | GGUF models directly, no service required |
 | RAG Framework | LlamaIndex 0.14.15 | Document ingestion and retrieval |
 | Vector Store | ChromaDB 1.5.2 | Local embedding storage |
+| Reranker | sentence-transformers | Cross-encoder reranking |
 | UI | Streamlit 1.54.0 | Browser-based chat interface |
 | Evaluation | sentence-transformers | Local answer quality scoring |
 | Containers | Docker + Compose | Single command deployment |
@@ -76,6 +100,10 @@ Every other local RAG tool says "your data is private." Privet proves it.
 
 Both GGUF models available from [Hugging Face](https://huggingface.co). Place them in `models/`.
 
+To quantize your own models from HuggingFace weights:
+```bash
+```
+
 ---
 
 ## Hardware Tiers
@@ -89,7 +117,7 @@ Privet auto-detects your hardware at setup and configures itself accordingly.
 | Low | 4-7GB | 1024 | gemma3:1b Q4_K_S, embed unloads after indexing |
 | Minimal | <4GB | 512 | CPU only, conservative settings |
 
-To re-run hardware detection after setup:
+To re-run hardware detection:
 ```bash
 python3 -m utils.hardware
 ```
@@ -116,7 +144,7 @@ The setup script will:
 Then start the app:
 ```bash
 source venv/bin/activate
-streamlit run app.py
+python3 -m streamlit run app.py
 ```
 
 Open `http://localhost:8501`
@@ -157,8 +185,8 @@ cp config.example.yaml config.yaml
 
 Start:
 ```bash
-ollama serve          # terminal 1
-streamlit run app.py  # terminal 2
+ollama serve                    # terminal 1
+python3 -m streamlit run app.py # terminal 2
 ```
 
 ---
@@ -177,24 +205,33 @@ Output:
 ║   PRIVET — PRIVACY AUDIT REPORT      ║
 ╚══════════════════════════════════════╝
   Chain integrity:  VALID
-  Period:           2026-01-01  to  2026-03-23
+  Period:           2026-01-01  to  2026-03-29
   Total queries:    412
   External bytes:   0
   Data left device: NO
   Verification:     ALL ENTRIES VALID
 ```
 
-The report is also saved to `logs/privacy_report_{date}.txt`.
+The report is saved to `logs/privacy_report_{date}.txt`.
+
+For stronger verification, use OS-level tools the application cannot influence:
+```bash
+# Per-process network activity (macOS)
+nettop -P -p $(pgrep -f streamlit) -l 1
+
+# Kernel-level syscall tracing (macOS)
+sudo dtrace -n 'syscall::connect*:entry /pid == $1/ { ustack(); }' -p $(pgrep -f streamlit)
+```
 
 ---
 
 ## Feedback and Fine-tuning
 
-Every answer can be rated thumbs up or down. Ratings are stored in `feedback/feedback.jsonl`, one JSON entry per rating with the question, answer, sources, model, and query time.
+Every answer can be rated thumbs up or down. Ratings are stored in `feedback/feedback.jsonl` — one JSON entry per rating including the question, answer, sources, model, and query time.
 
-This data is the foundation for future fine-tuning — a feedback-driven LoRA training pipeline that produces a model shaped entirely by your own usage, stored locally, owned by you.
+This data is the foundation for a planned fine-tuning pipeline using KTO (Kahneman-Tversky Optimization), which works with unpaired feedback. The goal: a model shaped entirely by your own usage, stored locally, owned by you.
 
-To disable: set `collect_feedback: false` in `config.yaml`.
+To disable feedback collection: set `collect_feedback: false` in `config.yaml`.
 
 ---
 
@@ -224,13 +261,15 @@ privet/
 │   ├── network_monitor.py      # External byte monitoring
 │   ├── rag_evaluator.py        # Automatic answer scoring
 │   ├── privacy_audit_log.py    # Hash-chained audit log
-│   └── verify_audit_log.py     # Audit verification CLI
+│   ├── verify_audit_log.py     # Audit verification CLI
+│   └── quantize.py             # Model quantization pipeline
 ├── app.py                      # Streamlit entry point
 ├── setup.sh                    # One-command installer
 ├── config.example.yaml         # Config template
 ├── Dockerfile
 ├── docker-compose.yml
 ├── models/                     # GGUF files (gitignored)
+├── models/provenance.json      # SHA-256 model provenance records
 ├── documents/                  # Your documents go here
 ├── chroma_db/                  # Vector store (auto-generated)
 ├── logs/                       # Logs + audit log + eval DB
@@ -252,9 +291,4 @@ privet/
 
 ## Benchmarks
 
-See [BENCHMARKS.md](BENCHMARKS.md) for performance data across hardware tiers.
-
----
-
-## Support 
-
+See [BENCHMARKS.md](BENCHMARKS.md) for full performance data, per-question results, and retrieval configuration comparisons.

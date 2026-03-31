@@ -126,13 +126,32 @@ class RAGEngine:
         Build both query engines from a VectorStoreIndex and apply the llamacpp
         prompt if needed.
 
-        When use_hybrid_search is true in config, combines BM25 and vector
-        retrieval via Reciprocal Rank Fusion using QueryFusionRetriever.
-        When false, falls back to pure vector search (original behaviour).
+        Retrieval path (controlled by use_hybrid_search):
+          - true:  BM25 + vector retrieval fused with Reciprocal Rank Fusion
+          - false: pure vector search
+
+        Reranking (controlled by use_reranking):
+          - true:  cross-encoder/ms-marco-MiniLM-L-6-v2 reranks the retrieved
+                   candidates down to rerank_top_k (default 5). Retrieval always
+                   fetches 10 candidates so the reranker has enough to choose from.
+          - false: retrieved candidates are passed through unchanged
 
         Args:
             index (VectorStoreIndex): The index to build engines from
         """
+        use_reranking = self.config.get("use_reranking", False)
+        rerank_top_k = self.config.get("rerank_top_k", 5)
+
+        node_postprocessors = []
+        if use_reranking:
+            from llama_index.core.postprocessor import SentenceTransformerRerank
+            node_postprocessors.append(
+                SentenceTransformerRerank(
+                    model="cross-encoder/ms-marco-MiniLM-L-6-v2",
+                    top_n=rerank_top_k
+                )
+            )
+
         if self.config.get("use_hybrid_search"):
             from llama_index.retrievers.bm25 import BM25Retriever
             from llama_index.core.retrievers import QueryFusionRetriever
@@ -156,21 +175,34 @@ class RAGEngine:
                 mode="reciprocal_rerank"
             )
             self.streaming_query_engine = RetrieverQueryEngine.from_args(
-                retriever=retriever, streaming=True
-            )
-            self.query_engine = RetrieverQueryEngine.from_args(
-                retriever=retriever
-            )
-            self.logger.info("Retrieval mode: hybrid (BM25 + vector + RRF)")
-        else:
-            self.streaming_query_engine = index.as_query_engine(
-                similarity_top_k=self.similarity_top_k,
+                retriever=retriever,
+                node_postprocessors=node_postprocessors,
                 streaming=True
             )
-            self.query_engine = index.as_query_engine(
-                similarity_top_k=self.similarity_top_k
+            self.query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever,
+                node_postprocessors=node_postprocessors
             )
-            self.logger.info("Retrieval mode: vector only")
+            mode = "hybrid (BM25 + vector + RRF)"
+        else:
+            from llama_index.core.query_engine import RetrieverQueryEngine
+
+            retriever = index.as_retriever(similarity_top_k=10 if use_reranking else self.similarity_top_k)
+            self.streaming_query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever,
+                node_postprocessors=node_postprocessors,
+                streaming=True
+            )
+            self.query_engine = RetrieverQueryEngine.from_args(
+                retriever=retriever,
+                node_postprocessors=node_postprocessors
+            )
+            mode = "vector"
+
+        if use_reranking:
+            self.logger.info(f"Retrieval mode: {mode} + rerank (top {rerank_top_k})")
+        else:
+            self.logger.info(f"Retrieval mode: {mode} only")
 
         self._apply_llamacpp_prompt()
 
@@ -337,9 +369,48 @@ Answer the current question, taking into account the conversation above if relev
         except Exception as e:
             self.logger.warning(f"Score enrichment from ChromaDB failed — using 0.0 fallback: {e}")
 
+    def _format_sources_for_provider(self, source_nodes: list) -> tuple:
+        """
+        Build both the display sources list and the provider sources list from
+        retrieved source nodes.
+
+        The display list is used by app.py to render citations. The provider
+        list is the format expected by providers with uses_source_list = True
+        (e.g. PleiasProvider), where each entry is a plain dict with text and
+        metadata fields matching the rag_library contract.
+
+        Args:
+            source_nodes (list): NodeWithScore objects from a retriever
+
+        Returns:
+            tuple: (display_sources, provider_sources)
+                display_sources — list of dicts for app.py
+                provider_sources — list of {"text": ..., "metadata": {"source": ...}}
+        """
+        display_sources = []
+        provider_sources = []
+        for node in source_nodes:
+            display_sources.append({
+                "file": node.node.metadata.get("file_name", "Unknown"),
+                "page": node.node.metadata.get("page_label", "Unknown"),
+                "score": round(node.score, 4) if node.score is not None else 0.0,
+                "preview": node.node.text[:150],
+                "text": node.node.text[:1000],
+            })
+            provider_sources.append({
+                "text": node.node.text,
+                "metadata": {"source": node.node.metadata.get("file_name", "")},
+            })
+        return display_sources, provider_sources
+
     def query(self, question: str, chat_history: list = None) -> dict:
         """
         Run a question through the RAG pipeline and return a complete response.
+
+        When the active provider sets uses_source_list = True (e.g. PleiasProvider),
+        retrieval is done directly via the retriever and the formatted source list
+        is passed to the provider. Otherwise the standard LlamaIndex synthesis
+        path is used.
 
         Args:
             question (str): The user's question
@@ -350,31 +421,39 @@ Answer the current question, taking into account the conversation above if relev
         """
         self.logger.info(f"Query received: '{question}'")
 
-        history_context = self._build_history_context(chat_history)
+        history_context = self._build_history_context(
+            [] if getattr(self.provider, 'uses_source_list', False) else chat_history
+        )
         contextual_question = self._build_contextual_question(question, history_context)
 
         start = time.time()
-        response = self.query_engine.query(contextual_question)
+
+        if getattr(self.provider, 'uses_source_list', False):
+            source_nodes = self.query_engine.retriever.retrieve(contextual_question)
+            sources, provider_sources = self._format_sources_for_provider(source_nodes)
+            answer = self.provider.generate(question, sources=provider_sources)
+        else:
+            response = self.query_engine.query(contextual_question)
+            sources = []
+            for node in response.source_nodes:
+                sources.append({
+                    "file": node.metadata.get("file_name", "Unknown"),
+                    "page": node.metadata.get("page_label", "Unknown"),
+                    "score": round(node.score, 4) if node.score is not None else 0.0,
+                    "preview": node.text[:150],
+                    "text": node.text[:1000],
+                })
+            answer = str(response)
+
         self.last_query_time = round(time.time() - start, 2)
-
-        sources = []
-        for node in response.source_nodes:
-            sources.append({
-                "file": node.metadata.get("file_name", "Unknown"),
-                "page": node.metadata.get("page_label", "Unknown"),
-                "score": round(node.score, 4) if node.score is not None else 0.0,
-                "preview": node.text[:150],
-                "text": node.text[:1000]
-            })
-
         self._enrich_scores_from_chroma(question, sources)
         self.last_sources = sources
         self.logger.info(f"Query completed | Time: {self.last_query_time}s | Sources retrieved: {len(sources)}")
 
         return {
-            "answer": str(response),
+            "answer": answer,
             "sources": sources,
-            "query_time": self.last_query_time
+            "query_time": self.last_query_time,
         }
 
     def stream_query(self, question: str, chat_history: list = None):
@@ -385,6 +464,11 @@ Answer the current question, taking into account the conversation above if relev
         streaming response object is created, before any tokens are generated. Sources
         are stored on self.last_sources so app.py can access them without a second query.
 
+        When the active provider sets uses_source_list = True (e.g. PleiasProvider),
+        retrieval is done via the retriever directly and sources are passed to
+        provider.stream(). The generator contract is identical to the standard path
+        so app.py requires no changes.
+
         Args:
             question (str): The user's question
             chat_history (list): List of dicts with 'role' and 'content' keys
@@ -394,31 +478,41 @@ Answer the current question, taking into account the conversation above if relev
         """
         self.logger.info(f"Stream query received: '{question}'")
 
-        history_context = self._build_history_context(chat_history)
+        history_context = self._build_history_context(
+            [] if getattr(self.provider, 'uses_source_list', False) else chat_history
+        )
         contextual_question = self._build_contextual_question(question, history_context)
 
         start = time.time()
 
-        # Retrieval happens here synchronously, source_nodes are populated
-        # before any tokens are generated
-        streaming_response = self.streaming_query_engine.query(contextual_question)
+        if getattr(self.provider, 'uses_source_list', False):
+            source_nodes = self.streaming_query_engine.retriever.retrieve(contextual_question)
+            self.last_sources, provider_sources = self._format_sources_for_provider(source_nodes)
+            self._enrich_scores_from_chroma(question, self.last_sources)
+            self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
+            for token in self.provider.stream(question, sources=provider_sources):
+                yield token
+        else:
+            # Retrieval happens here synchronously, source_nodes are populated
+            # before any tokens are generated
+            streaming_response = self.streaming_query_engine.query(contextual_question)
 
-        # Extract sources immediately after retrieval before streaming begins
-        self.last_sources = []
-        for node in streaming_response.source_nodes:
-            self.last_sources.append({
-                "file": node.metadata.get("file_name", "Unknown"),
-                "page": node.metadata.get("page_label", "Unknown"),
-                "score": round(node.score, 4) if node.score is not None else 0.0,
-                "preview": node.text[:150],
-                "text": node.text[:1000]
-            })
+            # Extract sources immediately after retrieval before streaming begins
+            self.last_sources = []
+            for node in streaming_response.source_nodes:
+                self.last_sources.append({
+                    "file": node.metadata.get("file_name", "Unknown"),
+                    "page": node.metadata.get("page_label", "Unknown"),
+                    "score": round(node.score, 4) if node.score is not None else 0.0,
+                    "preview": node.text[:150],
+                    "text": node.text[:1000],
+                })
 
-        self._enrich_scores_from_chroma(question, self.last_sources)
-        self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
+            self._enrich_scores_from_chroma(question, self.last_sources)
+            self.logger.info(f"Sources retrieved: {len(self.last_sources)} | Starting token stream")
 
-        for token in streaming_response.response_gen:
-            yield token
+            for token in streaming_response.response_gen:
+                yield token
 
         self.last_query_time = round(time.time() - start, 2)
         self.logger.info(f"Stream query completed | Time: {self.last_query_time}s")

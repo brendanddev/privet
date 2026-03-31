@@ -43,6 +43,11 @@ def load_config(config_path: str = "config.yaml") -> dict:
         "privacy_audit_path": "./logs/privacy_audit.jsonl",
         "show_hardware_panel": True,
         "use_hybrid_search": False,
+        "use_reranking": False,
+        "rerank_top_k": 5,
+        "models_path": "./models",
+        "llamacpp_path": None,
+        "pleias_model_path": "./models/Pleias-RAG-1B-Q4_K_M.gguf",
     }
 
     if not os.path.exists(config_path):
