@@ -35,10 +35,11 @@ logs_path: ./logs
 collect_feedback: true
 feedback_path: ./feedback/feedback.jsonl
 
-# Provider: ollama or llamacpp
+# Provider: ollama, llamacpp, or pleias
 # Default is ollama — works out of the box after `ollama pull gemma3:1b`
 # Switch to llamacpp if you want fully offline inference without Ollama running
-provider: ollama
+# Switch to pleias to use Pleias-RAG-1B with RAGWithCitations (rag_library)
+provider: pleias
 
 # llama.cpp settings (only used when provider is llamacpp)
 # Download from Hugging Face:
@@ -50,6 +51,26 @@ n_gpu_layers: -1
 n_ctx: 4096
 n_threads: null
 
+# Pleias RAG provider settings (only used when provider is pleias)
+# Download or quantize from PleIAs/Pleias-RAG-1B on Hugging Face
+# embed_model_path above is shared — nomic-embed-text handles embeddings for all local providers
+pleias_model_path: ./models/Pleias-RAG-1B.gguf
+
 # Hybrid search: BM25 + vector retrieval combined with Reciprocal Rank Fusion
 # Set to false to use pure vector search (faster, slightly lower recall)
 use_hybrid_search: false
+
+# Cross-encoder reranking: reranks retrieved candidates with ms-marco-MiniLM-L-6-v2
+# Retrieves 10 candidates then picks the best rerank_top_k — improves precision
+# at the cost of ~100-300ms per query. Works with both vector and hybrid search.
+use_reranking: false
+rerank_top_k: 5
+
+# Quantization pipeline (utils/quantize.py)
+# models_path: where downloaded and quantized .gguf files are stored
+# llamacpp_path: path to the llama.cpp repo root (not the build directory)
+#   convert_hf_to_gguf.py is expected at {llamacpp_path}/convert_hf_to_gguf.py
+#   llama-quantize binary is expected at {llamacpp_path}/build/bin/llama-quantize
+#   Also readable from LLAMACPP_PATH environment variable.
+models_path: ./models
+# llamacpp_path: ~/llama.cpp
