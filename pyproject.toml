@@ -1,0 +1,14 @@
+[project]
+name = "privet"
+version = "0.4.8"
+description = "Local retrieval/runtime system for personal knowledge"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
